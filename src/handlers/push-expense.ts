@@ -77,6 +77,10 @@ export async function pushExpense(request: Request, env: Env): Promise<Response>
             temperature: 0.1,
         });
 
+        if (!aiResponse.response) {
+            throw new Error('AI response is empty');
+        }
+
         parsed = JSON.parse(aiResponse.response);
     } catch (error) {
         console.error('AI Parse Error:', error);

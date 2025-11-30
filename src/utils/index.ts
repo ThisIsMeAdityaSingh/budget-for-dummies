@@ -4,6 +4,7 @@ export interface Expense {
     description: string;
     date: string;
     time: string;
+    merchant?: string;
 }
 
 /**
