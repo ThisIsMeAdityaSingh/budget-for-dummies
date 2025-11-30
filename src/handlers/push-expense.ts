@@ -1,5 +1,5 @@
 import moment from "moment";
-import { escapeMarkdownV2, isValidExpenseObject } from "../utils";
+import { detectSignals, escapeMarkdownV2, isValidExpenseObject } from "../utils";
 import { sendMessageToTelegram } from "./send-message";
 
 interface TelegramUpdate {
@@ -35,46 +35,83 @@ export async function pushExpense(request: Request, env: Env): Promise<Response>
     const text = body.message?.text;
     const messageFromId = body.message?.from?.id;
 
-    console.log(`4. Validating from id.`)
+    if (!text) {
+        return new Response("No text", { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
+
     if (messageFromId !== parseInt(env.TELEGRAM_VALID_FROM_ID)) {
         await sendMessageToTelegram(env, String(chatId), 'Wow, really?? 🫨. Go tell yo mom as well, she must be proud of this 😄');
         return new Response("Unauthorized", { status: 401, headers: { 'Content-Type': 'application/json' } });
     }
 
+    // checking with signal detection what the text is even worth sending to AI systems, this would help us reduce costs
+    // for strings that are totally hopeless
+    const signals = detectSignals(text);
+
+    const noExpense =
+        !signals.hasNumber &&
+        !signals.hasCurrency &&
+        !signals.hasExpenseVerb &&
+        !signals.hasMerchantLike &&
+        !signals.hasDate &&
+        !signals.hasTime;
+
+    if (noExpense) {
+        await sendMessageToTelegram(env, String(chatId), '⁉️ No expense detected. Try: `Lunch 150 at Dominos`');
+        return new Response(JSON.stringify({ ok: false, reason: 'invalid_data' }), { status: 200 });
+    }
+
     console.log(`Processing for ${chatId}: ${text}`);
-
-    const categories = env.EXPENSE_CATEGORIES.split(',');
-
-    const promptText = [
-        "You are a strict JSON extractor. Output exactly one JSON object and nothing else. No explanation, no backticks, no extra text.",
-        "Schema (exact fields):",
-        "  - amount (number or null),",
-        "  - category (one of: " + categories.join(', ') + " or null),",
-        "  - description (string or null),",
-        "  - date (YYYY-MM-DD or null),",
-        "  - time (HH:MM or null).",
-        "Rules:",
-        "  1) If the text contains no expense-like tokens (numbers, currency symbols like ₹, rs, rupee, USD, date patterns, time patterns, or clear merchant names), return all fields as null.",
-        "  2) Do not invent amounts, categories, merchants, dates or times. If unsure, set that field to null.",
-        "  3) Always produce valid JSON parseable by JSON.parse().",
-        "Examples:",
-        '  Input: "Bought pizza for 100 at Domino\'s on 2025-11-29 19:30"',
-        '  Output: {"amount":100.0,"category":"Food","description":"Bought pizza at Domino\'s","date":"2025-11-29","time":"19:30","merchant":"Domino\'s"}',
-        '  Input: "Spent 350 on dinner on Zomato"',
-        '  Output: {"amount":350.0,"category":"Food","description":"Spent 350 on dinner on Zomato","date":null,"time":null,"merchant":"Zomato"}',
-        '  Input: "random"',
-        '  Output: {"amount":null,"category":null,"description":null,"date":null,"time":null}',
-        "Now extract from the following text (Text begins):",
-        "Text: " + text
-    ].join("\n");
+    const todayDate = moment().format('ll');
+    const todayTime = moment().format('LT');
+    const categoriesList = env.EXPENSE_CATEGORIES.split(',').join(', ');
 
     let parsed;
 
+    // const systemContent = `You are a JSON extractor. Return exactly one JSON object and nothing else — no explanation, no markdown, no bullet lists. Extract expense data. Context: Today is ${todayDate}, time is ${todayTime}. Categories: ${categoriesList}. Rules: 1. Calculate relative dates (e.g., "yesterday") based on context. 2. If text is not a clear expense, return null for 'amount'. 3. 'category' must be from the list (lowercase). 4. If a field cannot be reliably extracted, set it to null. 5. Output must be strictly valid JSON only (single object). 6. Merchant should be the vendor or service (e.g., "swiggy", "zomato", "dominos", "amazon") where the payment went. If the text contains "on <merchant>", "at <merchant>", "via <merchant>" or "ordered from <merchant>", that is the merchant.`;
+
+    const systemContent = `You are a JSON extractor. You must output exactly one JSON object and nothing else — no explanation, no markdown, no commentary, no extra keys. The JSON must match the schema: { amount (number|null), category (string|null), description (string|null), date (YYYY-MM-DD|null), time (HH:MM|null), merchant (string|null) }.
+Rules:
+- If a field cannot be reliably extracted, set it to null.
+- Context: Today is ${todayDate}, time is ${todayTime}
+- Categories: ${categoriesList}
+- Keep category and merchant lowercase.
+- Prefer merchant found in patterns like "on <merchant>", "at <merchant>", "via <merchant>", "ordered from <merchant>".
+- DO NOT output anything other than the single JSON object.`;
+
+    const messages = [
+        { role: "system", content: systemContent },
+        { role: "user", content: "Spent 500 on swiggy for groceries" },
+        { role: "assistant", content: `{"amount":500,"category":"grocery","description":"groceries","date":"${todayDate}","time":"${todayTime}","merchant":"swiggy"}` },
+        { role: "user", content: "Paid 349 to zomato for dinner" },
+        { role: "assistant", content: `{"amount":349,"category":"food","description":"dinner","date":"${todayDate}","time":"${todayTime}","merchant":"zomato"}` },
+        { role: "user", content: "I paid 349 to zomato for dinner yesterday" },
+        { role: "assistant", content: `{"amount":349,"category":"food","description":"dinner","date":"${moment().subtract(1, 'day').format('ll')}","time":"${todayTime}","merchant":"zomato"}` },
+        { role: "user", content: "Lunch 120" },
+        { role: "assistant", content: `{"amount":120,"category":"food","description":"lunch","date":"${todayDate}","time":"${todayTime}","merchant":null}` },
+        { role: "user", content: text }
+    ];
+
     try {
-        const aiResponse = await env.AI.run('@cf/meta/llama-3-8b-instruct', {
-            prompt: promptText,
+        const aiResponse = await env.AI.run('@cf/meta/llama-3.2-1b-instruct', {
             max_tokens: 500,
-            temperature: 0.1,
+            temperature: 0.0,
+            messages: messages,
+            response_format: {
+                type: 'json_object',
+                json_schema: {
+                    type: 'object',
+                    properties: {
+                        amount: { type: 'number' },
+                        category: { type: 'string' },
+                        description: { type: 'string' },
+                        date: { type: 'string' },
+                        time: { type: 'string' },
+                        merchant: { type: 'string' }
+                    },
+                    required: ['amount', 'category', 'description', 'date', 'time', 'merchant']
+                }
+            }
         });
 
         if (!aiResponse.response) {
@@ -89,7 +126,6 @@ export async function pushExpense(request: Request, env: Env): Promise<Response>
     }
 
     // validating the parsed ai data
-    console.log(`Parsed - Data - ${JSON.stringify(parsed)}`)
     if (!isValidExpenseObject(parsed)) {
         console.error('Invalid Expense Object:', parsed);
         await sendMessageToTelegram(env, String(chatId), '⚠️ Sorry, I could not parse the expense. Please try again.');
@@ -121,7 +157,7 @@ export async function pushExpense(request: Request, env: Env): Promise<Response>
     const excapedMerchant = escapeMarkdownV2(parsed?.merchant || 'Unknown');
     const excapedDescription = escapeMarkdownV2(parsed.description || '');
 
-    const confirmation = `✅ Logged *${parsed.amount}* (${excapedCat}) for _${excapedDescription}_ at _${excapedMerchant}_\\.`;
+    const confirmation = `✅ Logged *${parsed.amount}* (${excapedCat}) for _${excapedDescription}_ at _${excapedMerchant}_.`;
 
     await sendMessageToTelegram(env, String(chatId), confirmation, true);
 
