@@ -11,8 +11,10 @@
  * Learn more at https://developers.cloudflare.com/workers/
  */
 
+import { pushExpense } from "./handlers/push-expense";
+
 export default {
 	async fetch(request, env, ctx): Promise<Response> {
-		return new Response('Hello World!');
+		return pushExpense(request, env);
 	},
 } satisfies ExportedHandler<Env>;

@@ -1,3 +1,4 @@
+import moment from "moment";
 import { escapeMarkdownV2, isValidExpenseObject } from "../utils";
 import { sendMessageToTelegram } from "./send-message";
 
@@ -34,7 +35,9 @@ export async function pushExpense(request: Request, env: Env): Promise<Response>
     const text = body.message?.text;
     const messageFromId = body.message?.from?.id;
 
+    console.log(`4. Validating from id.`)
     if (messageFromId !== parseInt(env.TELEGRAM_VALID_FROM_ID)) {
+        await sendMessageToTelegram(env, String(chatId), 'Wow, really?? 🫨. Go tell yo mom as well, she must be proud of this 😄');
         return new Response("Unauthorized", { status: 401, headers: { 'Content-Type': 'application/json' } });
     }
 
@@ -68,11 +71,11 @@ export async function pushExpense(request: Request, env: Env): Promise<Response>
     let parsed;
 
     try {
-        const aiResponse = await env.AI.run('@cf/meta/llama-3.1-8b-instruct-inference', {
+        const aiResponse = await env.AI.run('@cf/meta/llama-3-8b-instruct', {
             prompt: promptText,
             max_tokens: 500,
             temperature: 0.1,
-        })
+        });
 
         parsed = JSON.parse(aiResponse.response);
     } catch (error) {
@@ -82,6 +85,7 @@ export async function pushExpense(request: Request, env: Env): Promise<Response>
     }
 
     // validating the parsed ai data
+    console.log(`Parsed - Data - ${JSON.stringify(parsed)}`)
     if (!isValidExpenseObject(parsed)) {
         console.error('Invalid Expense Object:', parsed);
         await sendMessageToTelegram(env, String(chatId), '⚠️ Sorry, I could not parse the expense. Please try again.');
@@ -89,15 +93,19 @@ export async function pushExpense(request: Request, env: Env): Promise<Response>
     }
 
     // Default date/time if null
-    const date = parsed.date || new Date().toISOString().split('T')[0];
-    const time = parsed.time || '';
+    const date = parsed.date || moment().format('ll');
+    const time = parsed.time || moment().format('LT');
+
+    if (parsed.category) {
+        parsed.category = parsed.category.toLowerCase().trim();
+    }
 
     // inserting into DB
     const INSERT_QUERY = `INSERT INTO Expenses (user_id, amount, category, description, date, time, merchant, platform) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
 
     try {
-        const insertResponse = await env.DB.prepare(INSERT_QUERY)
-            .bind(String(chatId), parsed.amount, parsed.category, parsed.description, parsed.date, parsed.time, parsed?.merchant || 'Unknown', 'Telegram')
+        await env.budget_db.prepare(INSERT_QUERY)
+            .bind(String(chatId), parsed.amount, parsed.category, parsed.description, date, time, parsed?.merchant || 'Unknown', 'Telegram')
             .run();
     } catch (error) {
         console.error('DB Insert Error:', error);
@@ -109,9 +117,9 @@ export async function pushExpense(request: Request, env: Env): Promise<Response>
     const excapedMerchant = escapeMarkdownV2(parsed?.merchant || 'Unknown');
     const excapedDescription = escapeMarkdownV2(parsed.description || '');
 
-    const confirmation = `✅ Logged *${parsed.amount}* \\(${excapedCat}\\) for _${excapedDescription}_\\ at _${excapedMerchant}_\\.`;
+    const confirmation = `✅ Logged *${parsed.amount}* (${excapedCat}) for _${excapedDescription}_ at _${excapedMerchant}_\\.`;
 
-    await sendMessageToTelegram(env, String(chatId), confirmation);
+    await sendMessageToTelegram(env, String(chatId), confirmation, true);
 
     return new Response(JSON.stringify({ ok: true }), { status: 200 });
 }
