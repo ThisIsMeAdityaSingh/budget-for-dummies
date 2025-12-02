@@ -115,6 +115,7 @@ export function detectSignals(inputText: string): ExpenseSignal {
     // Amount extraction
     const amtMatch = t.match(amountPattern);
     if (amtMatch) {
+        console.log('Signals amount match ', amtMatch);
         let fullMatch = amtMatch[0];
         let numStr = fullMatch.replace(/(?:₹|rs\.?|rupees?|inr|\$|usd|€|GBP)\s*/i, '').replace(/\s*(?:INR|Rs\.?|rupees?|inr|₹|\$|USD|€|GBP)/i, '');
 
@@ -166,6 +167,7 @@ export function detectSignals(inputText: string): ExpenseSignal {
     // Strict merchant
     if (signals.hasNumber || signals.hasCurrency) {
         const merchantMatch = t.match(merchantPattern);
+        console.log('Signals merchant match ', merchantMatch);
         if (merchantMatch && merchantMatch[1]) {
             signals.hasMerchantLike = true;
             signals.inferredDescription = signals.inferredDescription || merchantMatch[1];
@@ -180,5 +182,6 @@ export function detectSignals(inputText: string): ExpenseSignal {
 
     signals.canBeExpenseWithoutAmount = signals.hasNumber || signals.hasCurrency;
 
+    console.log('Signals', '---', signals);
     return signals;
 }

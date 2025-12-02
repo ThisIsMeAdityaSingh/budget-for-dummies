@@ -8,9 +8,10 @@ declare namespace Cloudflare {
     interface Env {
         TELEGRAM_VALID_FROM_ID: string;
         TELEGRAM_BOT_TOKEN: string;
-        GEMINI_API_KEY: string;
         EXPENSE_CATEGORIES: string;
         budget_db: D1Database;
+        GOOGLE_GEMINI_API_KEY: string;
+        SENTIMENT_CONFIDENT_THRESHOLD: string;
         AI: Ai;
     }
 }
