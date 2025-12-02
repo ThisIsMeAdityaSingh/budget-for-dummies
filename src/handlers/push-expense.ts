@@ -103,11 +103,12 @@ export async function pushExpense(request: Request, env: Env): Promise<Response>
         console.log("Google gemini sentiment response ", JSON.stringify(response), " || END");
         score = response?.candidates?.[0]?.content?.parts?.[0]?.text;
     } catch (err) {
-        console.log("Google gemini sentiment error", err);
+        await sendMessageToTelegram(env, String(chatId), "⁉️ Sorry, can't figure out what that was. Try: `Lunch 150 at Dominos`");
+        return new Response(JSON.stringify({ ok: false, reason: 'invalid_data' }), { status: 200 });
     }
 
     if (!score) {
-        await sendMessageToTelegram(env, String(chatId), '⁉️ No sentiment detected. Try: `Lunch 150 at Dominos`');
+        await sendMessageToTelegram(env, String(chatId), "⁉️ Sorry, can't figure out what that was. Try: `Lunch 150 at Dominos`");
         return new Response(JSON.stringify({ ok: false, reason: 'invalid_data' }), { status: 200 });
     }
 
@@ -117,12 +118,12 @@ export async function pushExpense(request: Request, env: Env): Promise<Response>
             const sentimentScoreValue = sentimentScore?.score;
 
             if (sentimentScoreValue < Number(env.SENTIMENT_CONFIDENT_THRESHOLD || "0.95")) {
-                await sendMessageToTelegram(env, String(chatId), '⁉️ No sentiment detected. Try: `Lunch 150 at Dominos`');
+                await sendMessageToTelegram(env, String(chatId), "⁉️ Sorry, can't figure out what that was. Try: `Lunch 150 at Dominos`");
                 return new Response(JSON.stringify({ ok: false, reason: 'invalid_data' }), { status: 200 });
             }
         } catch (error) {
             console.log("Google gemini sentiment error", error);
-            await sendMessageToTelegram(env, String(chatId), '⁉️ No sentiment detected. Try: `Lunch 150 at Dominos`');
+            await sendMessageToTelegram(env, String(chatId), "⁉️ Sorry, can't figure out what that was. Try: `Lunch 150 at Dominos`");
             return new Response(JSON.stringify({ ok: false, reason: 'invalid_data' }), { status: 200 });
         }
     }
@@ -134,8 +135,6 @@ export async function pushExpense(request: Request, env: Env): Promise<Response>
     const categoriesList = env.EXPENSE_CATEGORIES.split(',').join(', ');
 
     let parsed;
-
-    // const systemContent = `You are a JSON extractor. Return exactly one JSON object and nothing else — no explanation, no markdown, no bullet lists. Extract expense data. Context: Today is ${todayDate}, time is ${todayTime}. Categories: ${categoriesList}. Rules: 1. Calculate relative dates (e.g., "yesterday") based on context. 2. If text is not a clear expense, return null for 'amount'. 3. 'category' must be from the list (lowercase). 4. If a field cannot be reliably extracted, set it to null. 5. Output must be strictly valid JSON only (single object). 6. Merchant should be the vendor or service (e.g., "swiggy", "zomato", "dominos", "amazon") where the payment went. If the text contains "on <merchant>", "at <merchant>", "via <merchant>" or "ordered from <merchant>", that is the merchant.`;
 
     const systemContent = `You are a JSON extractor. You must output exactly one JSON object and nothing else — no explanation, no markdown, no commentary, no extra keys. The JSON must match the schema: { amount (number|null), category (string|null), description (string|null), date (YYYY-MM-DD|null), time (HH:MM|null), merchant (string|null) }.
 Rules:
