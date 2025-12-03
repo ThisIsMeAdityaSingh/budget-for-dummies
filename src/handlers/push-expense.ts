@@ -19,9 +19,9 @@ export async function pushExpense(request: Request, env: Env): Promise<Response>
         const unSanitizedtext = body?.message?.text;
         if (!unSanitizedtext) throw throwError("Nothing to do with the request", 400);
 
-        const { isValid, sendCallbackToTelegram, error, sanitizedText } = sanitizeText(unSanitizedtext);
+        const { isValid, telegramMessage, error, sanitizedText } = sanitizeText(unSanitizedtext);
         if (!isValid) {
-            sendCallbackToTelegram && await sendMessageToTelegram(env, String(chatId), error);
+            telegramMessage && await sendMessageToTelegram(env, String(chatId), telegramMessage);
             throw throwError(error, 200);
         }
 

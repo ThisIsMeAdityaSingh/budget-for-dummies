@@ -242,23 +242,23 @@ Rules:
 export function sanitizeText(text: string) {
     const issues = {
         isValid: true,
-        sendCallbackToTelegram: false,
+        telegramMessage: "",
         error: "",
         sanitizedText: ""
     };
 
     if (text.length < 10) {
         issues.isValid = false;
-        issues.sendCallbackToTelegram = true;
-        issues.error = "✖️ Text is too short";
+        issues.telegramMessage = "✖️ Text is too short";
+        issues.error = "text too short";
 
         return issues;
     }
 
     if (text.length > 300) {
         issues.isValid = false;
-        issues.sendCallbackToTelegram = true;
-        issues.error = "✖️Text is too long, gotta save those tokens 💸";
+        issues.telegramMessage = "✖️ Text is too long, gotta save those tokens 💸";
+        issues.error = "text too long";
 
         return issues;
     }
@@ -266,8 +266,8 @@ export function sanitizeText(text: string) {
     // check has to contain both alpha and numeric & should not contain any special characters
     if (!/[a-zA-Z]/.test(text) || !/[0-9]/.test(text) || /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>/?]/.test(text)) {
         issues.isValid = false;
-        issues.sendCallbackToTelegram = true;
-        issues.error = "✖️Text must contain both alpha and numeric characters and should not contain any special characters";
+        issues.telegramMessage = "✖️ Text must contain both alpha and numeric characters and should not contain any special characters";
+        issues.error = "text must contain both alpha and numeric characters and should not contain any special characters";
 
         return issues;
     }
@@ -275,15 +275,24 @@ export function sanitizeText(text: string) {
     // text should not contain any html tags
     if (/<[^>]+>/i.test(text)) {
         issues.isValid = false;
-        issues.sendCallbackToTelegram = true;
-        issues.error = "⁉️ What are you trying to do?";
+        issues.telegramMessage = "⁉️ What are you trying to do?";
+        issues.error = "html tags found";
+
+        return issues;
+    }
+
+    // text should not contain more than 15 words
+    if (text.split(" ").length > 18) {
+        issues.isValid = false;
+        issues.telegramMessage = "🤖 Text should not contain more than 18 words. Not expecting a trauma dump here.";
+        issues.error = "text should not contain more than 18 words";
 
         return issues;
     }
 
     issues.isValid = true;
-    issues.sendCallbackToTelegram = false;
     issues.error = "";
+    issues.telegramMessage = "";
     issues.sanitizedText = text.trim();
 
     return issues;
