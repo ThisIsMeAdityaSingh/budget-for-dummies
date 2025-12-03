@@ -238,3 +238,53 @@ Rules:
 
     return systemContent;
 }
+
+export function sanitizeText(text: string) {
+    const issues = {
+        isValid: true,
+        sendCallbackToTelegram: false,
+        error: "",
+        sanitizedText: ""
+    };
+
+    if (text.length < 10) {
+        issues.isValid = false;
+        issues.sendCallbackToTelegram = true;
+        issues.error = "✖️ Text is too short";
+
+        return issues;
+    }
+
+    if (text.length > 300) {
+        issues.isValid = false;
+        issues.sendCallbackToTelegram = true;
+        issues.error = "✖️Text is too long, gotta save those tokens 💸";
+
+        return issues;
+    }
+
+    // check has to contain both alpha and numeric & should not contain any special characters
+    if (!/[a-zA-Z]/.test(text) || !/[0-9]/.test(text) || /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>/?]/.test(text)) {
+        issues.isValid = false;
+        issues.sendCallbackToTelegram = true;
+        issues.error = "✖️Text must contain both alpha and numeric characters and should not contain any special characters";
+
+        return issues;
+    }
+
+    // text should not contain any html tags
+    if (/<[^>]+>/i.test(text)) {
+        issues.isValid = false;
+        issues.sendCallbackToTelegram = true;
+        issues.error = "⁉️ What are you trying to do?";
+
+        return issues;
+    }
+
+    issues.isValid = true;
+    issues.sendCallbackToTelegram = false;
+    issues.error = "";
+    issues.sanitizedText = text.trim();
+
+    return issues;
+}

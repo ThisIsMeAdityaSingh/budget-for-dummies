@@ -1,6 +1,6 @@
 import moment from "moment";
 import { GoogleGenAI } from "@google/genai";
-import { detectSignals, escapeMarkdownV2, getExpenseGenerationPrompt, getSentimentPrompt, isValidExpenseObject, TelegramUpdate } from "../utils";
+import { detectSignals, escapeMarkdownV2, getExpenseGenerationPrompt, getSentimentPrompt, isValidExpenseObject, TelegramUpdate, sanitizeText } from "../utils";
 import { sendMessageToTelegram } from "./send-message";
 import { analyseSentimentSchema } from "../utils/confidence-utility";
 import { HttpError, throwError } from "../utils/error";
@@ -16,8 +16,17 @@ export async function pushExpense(request: Request, env: Env): Promise<Response>
         const chatId = body?.message?.chat?.id;
         if (!chatId) throw throwError("Doesn't seem to be from the right source", 400);
 
-        const text = body?.message?.text;
-        if (!text) throw throwError("Nothing to do with the request", 400);
+        const unSanitizedtext = body?.message?.text;
+        if (!unSanitizedtext) throw throwError("Nothing to do with the request", 400);
+
+        const { isValid, sendCallbackToTelegram, error, sanitizedText } = sanitizeText(unSanitizedtext);
+        if (!isValid) {
+            sendCallbackToTelegram && await sendMessageToTelegram(env, String(chatId), error);
+            throw throwError(error, 200);
+        }
+
+        const text = sanitizedText;
+
 
         const messageFromId = body?.message?.from?.id;
         if (!messageFromId) throw throwError("Invalid or fake message", 400);
