@@ -21,6 +21,29 @@ export interface ExpenseSignal {
     canBeExpenseWithoutAmount?: boolean;
 }
 
+export interface TelegramUpdate {
+    message?: {
+        chat?: {
+            id: number;
+            [key: string]: any;
+        };
+        text?: string;
+        from?: {
+            id: number;
+            [key: string]: any;
+        };
+        [key: string]: any;
+    };
+    [key: string]: any;
+}
+
+export function isEmptyObject(obj: any) {
+    if (!obj || typeof obj !== "object") return true;
+    if (Array.isArray(obj)) return true;
+
+    return Object.keys(obj).length === 0;
+}
+
 /**
  * Validates an expense object
  * @param {Expense} expense The expense object to validate
@@ -81,13 +104,13 @@ export function detectSignals(inputText: string): ExpenseSignal {
     const t = (inputText || "").trim();
 
     // Currency: \b for words, no for symbols
-    const currencyPattern = /\b(?:rs\.?|rupees?|inr|usd|GBP|bucks?)\b|(?:₹|\$|€)/i;
+    const currencyPattern = /\b(?:rs\.?|rupees?|inr|bucks?)\b|(?:₹|\$|€)/i;
 
     // Amount pattern
     const amountPattern = /(?<![a-zA-Z0-9_])(?:(₹|rs\.?|rupees?|inr|\$|usd|€|GBP)\s*)?([+-]?\d+(?:[ ,]\d+)*(?:\.\d{1,2})?)(?:\s*(INR|Rs\.?|rupees?|inr|₹|\$|USD|€|GBP))?(?![a-zA-Z0-9_])/i;
 
     // Expense verbs
-    const expenseVerbPattern = /\b(spent|paid|purchase|bought|ordered|took|bill|charged|expense|cost)\b/i;
+    const expenseVerbPattern = /\b(spent|paid|purchase|bought|ordered|took|bill|charged|expense|cost|invested)\b/i;
 
     // Merchant: first word any case after prep; cap starts with upper
     const merchantPattern = /\b(?:at|from|via|by|in|on)\s+([A-Za-z][A-Za-z0-9'&.-]+(?:\s+[A-Z][A-Za-z0-9'&.-]+)*)\b/i;
@@ -184,4 +207,34 @@ export function detectSignals(inputText: string): ExpenseSignal {
 
     console.log('Signals', '---', signals);
     return signals;
+}
+
+export function getSentimentPrompt(text: string) {
+    const sentimentPrompt = `
+    Analyze the text to determine if it represents a PERSONAL EXPENSE by the narrator (User).
+
+    SCORING RULES:
+    - Score 0.95 - 1.0: User explicitly paid or spent money, implicitly or explicitly paid or spent money (e.g., "Spent 150 for dinner on Zomato.", "Paid 14000 on rent for this month.", "150 dinner swiggy."), or paid a debt.
+    - Score 0.0 - 0.1: 
+        1. General statements or facts ("Rent is expensive", "I have 100 trees", "School fees is 10000").
+        2. Third-party expenses ("Dad paid 500", "She bought 4 apples in 100 dollars").
+        3. INCOME statements ("Received salary 5000" -> This is NOT an expense).
+        4. Future plans ("I will buy this next year").
+
+    INPUT TEXT: "${text}"`;
+
+    return sentimentPrompt;
+}
+
+export function getExpenseGenerationPrompt(todayDate: string, todayTime: string, categoriesList: string) {
+    const systemContent = `You are a JSON extractor. You must output exactly one JSON object and nothing else — no explanation, no markdown, no commentary, no extra keys. The JSON must match the schema: { amount (number|null), category (string|null), description (string|null), date (YYYY-MM-DD|null), time (HH:MM|null), merchant (string|null) }.
+Rules:
+    - If a field cannot be reliably extracted, set it to null.
+- Context: Today is ${todayDate}, time is ${todayTime}
+    - Categories: ${categoriesList}
+    - Keep category and merchant lowercase.
+- Prefer merchant found in patterns like "on <merchant>", "at <merchant>", "via <merchant>", "ordered from <merchant>".
+- DO NOT output anything other than the single JSON object.`;
+
+    return systemContent;
 }

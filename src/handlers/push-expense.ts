@@ -1,231 +1,189 @@
 import moment from "moment";
-import { GoogleGenAI, Type } from "@google/genai";
-import { detectSignals, escapeMarkdownV2, isValidExpenseObject } from "../utils";
+import { GoogleGenAI } from "@google/genai";
+import { detectSignals, escapeMarkdownV2, getExpenseGenerationPrompt, getSentimentPrompt, isValidExpenseObject, TelegramUpdate } from "../utils";
 import { sendMessageToTelegram } from "./send-message";
 import { analyseSentimentSchema } from "../utils/confidence-utility";
-
-interface TelegramUpdate {
-    message?: {
-        chat?: {
-            id: number;
-            [key: string]: any;
-        };
-        text?: string;
-        from?: {
-            id: number;
-            [key: string]: any;
-        };
-        [key: string]: any;
-    };
-    [key: string]: any;
-}
+import { HttpError, throwError } from "../utils/error";
 
 export async function pushExpense(request: Request, env: Env): Promise<Response> {
-    if (request.method !== "POST") {
-        return new Response("Method Not Allowed", { status: 405, headers: { 'Content-Type': 'application/json' } });
-    }
-
-    let body: TelegramUpdate;
-
     try {
-        body = await request.json() as TelegramUpdate;
-    } catch (error) {
-        return new Response("Invalid JSON", { status: 400, headers: { 'Content-Type': 'application/json' } });
-    }
+        if (request.method !== "POST") {
+            throw throwError("Method Not Allowed", 405);
+        }
 
-    const chatId = body.message?.chat?.id;
-    const text = body.message?.text;
-    const messageFromId = body.message?.from?.id;
+        const body = await request.json() as TelegramUpdate;
 
-    if (!text) {
-        return new Response("No text", { status: 400, headers: { 'Content-Type': 'application/json' } });
-    }
+        const chatId = body?.message?.chat?.id;
+        if (!chatId) throw throwError("Doesn't seem to be from the right source", 400);
 
-    if (messageFromId !== parseInt(env.TELEGRAM_VALID_FROM_ID)) {
-        await sendMessageToTelegram(env, String(chatId), 'Wow, really?? 🫨. Go tell yo mom as well, she must be proud of this 😄');
-        return new Response("Unauthorized", { status: 401, headers: { 'Content-Type': 'application/json' } });
-    }
+        const text = body?.message?.text;
+        if (!text) throw throwError("Nothing to do with the request", 400);
 
-    // checking with signal detection what the text is even worth sending to AI systems, this would help us reduce costs
-    // for strings that are totally hopeless
-    const signals = detectSignals(text);
+        const messageFromId = body?.message?.from?.id;
+        if (!messageFromId) throw throwError("Invalid or fake message", 400);
 
-    const noExpense =
-        !signals.hasNumber &&
-        !signals.hasCurrency &&
-        !signals.hasExpenseVerb &&
-        !signals.hasMerchantLike &&
-        !signals.hasDate &&
-        !signals.hasTime;
+        if (messageFromId !== parseInt(env.TELEGRAM_VALID_FROM_ID, 10)) {
+            await sendMessageToTelegram(env, String(chatId), 'You are supposed to be here ⁉️');
+            throw throwError("Unauthorized", 200); // returning 200 OK coz telegram will keep on re-trying
+        }
 
-    if (noExpense) {
-        await sendMessageToTelegram(env, String(chatId), '⁉️ No expense detected. Try: `Lunch 150 at Dominos`');
-        return new Response(JSON.stringify({ ok: false, reason: 'invalid_data' }), { status: 200 });
-    }
+        // now to save me money, the text would go through singal detection
+        // if no valid signals are detected, we ask user to re-phrase it, and try again
+        const signals = detectSignals(text);
+        const noExpense =
+            !signals.hasNumber &&
+            !signals.hasCurrency &&
+            !signals.hasExpenseVerb &&
+            !signals.hasMerchantLike &&
+            !signals.hasDate &&
+            !signals.hasTime;
 
-    // if amount is not detected, we can't process it
-    if (!signals.hasNumber && !signals.hasCurrency) {
-        await sendMessageToTelegram(env, String(chatId), '⁉️ No amount detected. Try: `Lunch 150 at Dominos`');
-        return new Response(JSON.stringify({ ok: false, reason: 'invalid_data' }), { status: 200 });
-    }
+        if (noExpense) {
+            await sendMessageToTelegram(env, String(chatId), '⁉️ No expense detected. Try: `Lunch 150 at Dominos`');
+            throw throwError("No expense signal detexted", 200);
+        }
 
-    // before hitting text generation model, which is kinda expensive and we need to conserve tokens, we need to figure out if the text is a valid expense
-    // intent should be of an expense
-    const client = new GoogleGenAI({ apiKey: env.GOOGLE_GEMINI_API_KEY });
+        // if amount is not detected, we can't process it
+        if (!signals.hasNumber && !signals.hasCurrency) {
+            await sendMessageToTelegram(env, String(chatId), '⁉️ No amount detected. Try: `Lunch 150 at Dominos`');
+            throw throwError("No amount detected", 200);
+        }
 
-    const sentimentSchema = analyseSentimentSchema();
-    const sentimentPrompt = `
-    Analyze the text to determine if it represents a PERSONAL EXPENSE by the narrator (User).
+        // now that signal detection would block majority of the bad traffic (I hope),
+        // we now have to focus on sentiment, because my signal detection logic is not bullet proof
+        // so, we would be using gemini 2.5 flash lite model for this.
+        const client = new GoogleGenAI({ apiKey: env.GOOGLE_GEMINI_API_KEY });
 
-    SCORING RULES:
-    - Score 0.95 - 1.0: User explicitly paid or spent money, implicitly or explicitly paid or spent money (e.g., "Spent 150 for dinner on Zomato.", "Paid 14000 on rent for this month.", "150 dinner swiggy."), or paid a debt.
-    - Score 0.0 - 0.1: 
-        1. General statements or facts ("Rent is expensive", "I have 100 trees").
-        2. Third-party expenses ("Dad paid 500", "She bought 4 apples in 100 dollars").
-        3. INCOME statements ("Received salary 5000" -> This is NOT an expense).
-        4. Future plans ("I will buy this next year").
+        const sentimentSchema = analyseSentimentSchema();
+        const sentimentPrompt = getSentimentPrompt(text);
 
-    INPUT TEXT: "${text}"`;
+        let score;
 
-    let score;
+        try {
+            const response = await client.models.generateContent({
+                model: 'gemini-2.5-flash-lite',
+                contents: [{ role: 'user', parts: [{ text: sentimentPrompt }] }],
+                config: {
+                    responseMimeType: 'application/json',
+                    responseSchema: sentimentSchema,
+                    temperature: 0.0, // i want it exact no deviation what so ever, so putting temp as 0
+                }
+            });
 
-    try {
-        const response = await client.models.generateContent({
-            model: 'gemini-2.5-flash-lite',
-            contents: [{ role: 'user', parts: [{ text: sentimentPrompt }] }],
-            config: {
-                responseMimeType: 'application/json',
-                responseSchema: sentimentSchema,
-                temperature: 0.0,
-            }
-        });
+            score = response?.candidates?.[0]?.content?.parts?.[0]?.text;
+        } catch (err) {
+            await sendMessageToTelegram(env, String(chatId), "⁉️ Sorry, can't figure out what that was. Try: `Lunch 150 at Dominos`");
+            throw throwError("Sentiment doesn't match", 200);
+        }
 
-        console.log("Google gemini sentiment response ", JSON.stringify(response), " || END");
-        score = response?.candidates?.[0]?.content?.parts?.[0]?.text;
-    } catch (err) {
-        await sendMessageToTelegram(env, String(chatId), "⁉️ Sorry, can't figure out what that was. Try: `Lunch 150 at Dominos`");
-        return new Response(JSON.stringify({ ok: false, reason: 'invalid_data' }), { status: 200 });
-    }
+        if (!score) {
+            await sendMessageToTelegram(env, String(chatId), "⁉️ Sorry, can't figure out what that was. Try: `Lunch 150 at Dominos`");
+            throw throwError("Sentiment doesn't match", 200);
+        }
 
-    if (!score) {
-        await sendMessageToTelegram(env, String(chatId), "⁉️ Sorry, can't figure out what that was. Try: `Lunch 150 at Dominos`");
-        return new Response(JSON.stringify({ ok: false, reason: 'invalid_data' }), { status: 200 });
-    }
-
-    if (score) {
         try {
             const sentimentScore = JSON.parse(score);
             const sentimentScoreValue = sentimentScore?.score;
 
             if (sentimentScoreValue < Number(env.SENTIMENT_CONFIDENT_THRESHOLD || "0.95")) {
-                await sendMessageToTelegram(env, String(chatId), "⁉️ Sorry, can't figure out what that was. Try: `Lunch 150 at Dominos`");
-                return new Response(JSON.stringify({ ok: false, reason: 'invalid_data' }), { status: 200 });
+                throw throwError(`Sentiment for text low, doesn't seem to be an expense ${text} || ${score}`, 200);
             }
         } catch (error) {
-            console.log("Google gemini sentiment error", error);
             await sendMessageToTelegram(env, String(chatId), "⁉️ Sorry, can't figure out what that was. Try: `Lunch 150 at Dominos`");
-            return new Response(JSON.stringify({ ok: false, reason: 'invalid_data' }), { status: 200 });
+            throw throwError(`Sentiment is not parsable ${score}`, 200);
         }
-    }
 
+        const todayDate = moment().format('ll');
+        const todayTime = moment().format('LT');
+        const categoriesList = env.EXPENSE_CATEGORIES.split(',').join(', ');
+        const systemContent = getExpenseGenerationPrompt(todayDate, todayTime, categoriesList);
 
-    console.log(`Processing for ${chatId}: ${text}`);
-    const todayDate = moment().format('ll');
-    const todayTime = moment().format('LT');
-    const categoriesList = env.EXPENSE_CATEGORIES.split(',').join(', ');
+        const messages = [
+            { role: "system", content: systemContent },
+            { role: "user", content: "Spent 500 on swiggy for groceries" },
+            { role: "assistant", content: `{ "amount": 500, "category": "grocery", "description": "groceries", "date": "${todayDate}", "time": "${todayTime}", "merchant": "swiggy" } ` },
+            { role: "user", content: "Paid 349 to zomato for dinner" },
+            { role: "assistant", content: `{ "amount": 349, "category": "food", "description": "dinner", "date": "${todayDate}", "time": "${todayTime}", "merchant": "zomato" } ` },
+            { role: "user", content: "I paid 349 to zomato for dinner yesterday" },
+            { role: "assistant", content: `{ "amount": 349, "category": "food", "description": "dinner", "date": "${moment().subtract(1, 'day').format('ll')}", "time": "${todayTime}", "merchant": "zomato" } ` },
+            { role: "user", content: "Lunch 120" },
+            { role: "assistant", content: `{ "amount": 120, "category": "food", "description": "lunch", "date": "${todayDate}", "time": "${todayTime}", "merchant": null } ` },
+            { role: "user", content: text }
+        ];
 
-    let parsed;
+        let parsed;
 
-    const systemContent = `You are a JSON extractor. You must output exactly one JSON object and nothing else — no explanation, no markdown, no commentary, no extra keys. The JSON must match the schema: { amount (number|null), category (string|null), description (string|null), date (YYYY-MM-DD|null), time (HH:MM|null), merchant (string|null) }.
-Rules:
-    - If a field cannot be reliably extracted, set it to null.
-- Context: Today is ${todayDate}, time is ${todayTime}
-    - Categories: ${categoriesList}
-    - Keep category and merchant lowercase.
-- Prefer merchant found in patterns like "on <merchant>", "at <merchant>", "via <merchant>", "ordered from <merchant>".
-- DO NOT output anything other than the single JSON object.`;
-
-    const messages = [
-        { role: "system", content: systemContent },
-        { role: "user", content: "Spent 500 on swiggy for groceries" },
-        { role: "assistant", content: `{ "amount": 500, "category": "grocery", "description": "groceries", "date": "${todayDate}", "time": "${todayTime}", "merchant": "swiggy" } ` },
-        { role: "user", content: "Paid 349 to zomato for dinner" },
-        { role: "assistant", content: `{ "amount": 349, "category": "food", "description": "dinner", "date": "${todayDate}", "time": "${todayTime}", "merchant": "zomato" } ` },
-        { role: "user", content: "I paid 349 to zomato for dinner yesterday" },
-        { role: "assistant", content: `{ "amount": 349, "category": "food", "description": "dinner", "date": "${moment().subtract(1, 'day').format('ll')}", "time": "${todayTime}", "merchant": "zomato" } ` },
-        { role: "user", content: "Lunch 120" },
-        { role: "assistant", content: `{ "amount": 120, "category": "food", "description": "lunch", "date": "${todayDate}", "time": "${todayTime}", "merchant": null } ` },
-        { role: "user", content: text }
-    ];
-
-    try {
-        const aiResponse = await env.AI.run('@cf/meta/llama-3.2-1b-instruct', {
-            max_tokens: 500,
-            temperature: 0.0,
-            messages: messages,
-            response_format: {
-                type: 'json_object',
-                json_schema: {
-                    type: 'object',
-                    properties: {
-                        amount: { type: 'number' },
-                        category: { type: 'string' },
-                        description: { type: 'string' },
-                        date: { type: 'string' },
-                        time: { type: 'string' },
-                        merchant: { type: 'string' }
-                    },
-                    required: ['amount', 'category', 'description', 'date', 'time', 'merchant']
+        try {
+            const aiResponse = await env.AI.run('@cf/meta/llama-3.2-1b-instruct', {
+                max_tokens: 500,
+                temperature: 0.0,
+                messages: messages,
+                response_format: {
+                    type: 'json_object',
+                    json_schema: {
+                        type: 'object',
+                        properties: {
+                            amount: { type: 'number' },
+                            category: { type: 'string' },
+                            description: { type: 'string' },
+                            date: { type: 'string' },
+                            time: { type: 'string' },
+                            merchant: { type: 'string' }
+                        },
+                        required: ['amount', 'category', 'description', 'date', 'time', 'merchant']
+                    }
                 }
-            }
-        });
+            });
 
-        if (!aiResponse.response) {
-            throw new Error('AI response is empty');
+            if (!aiResponse.response) {
+                throw new Error('AI response is empty');
+            }
+
+            parsed = JSON.parse(aiResponse.response);
+        } catch (error) {
+            await sendMessageToTelegram(env, String(chatId), '⚠️ Sorry, I could not parse the expense. Please try again.');
+            throw throwError("Text generation model failed in extracting expense", 200);
         }
 
-        parsed = JSON.parse(aiResponse.response);
+        // validating the parsed ai data
+        if (!isValidExpenseObject(parsed)) {
+            await sendMessageToTelegram(env, String(chatId), '⚠️ Sorry, I could not parse the expense. Please try again.');
+            throw throwError("Invalid expense generated by model", 200);
+        }
+
+        // Default date/time if null
+        const date = parsed.date || moment().format('ll');
+        const time = parsed.time || moment().format('LT');
+
+        if (parsed.category) {
+            parsed.category = parsed.category.toLowerCase().trim();
+        }
+
+        const INSERT_QUERY = `INSERT INTO Expenses(user_id, amount, category, description, date, time, merchant, platform) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`;
+
+        try {
+            await env.budget_db.prepare(INSERT_QUERY)
+                .bind(String(chatId), parsed.amount, parsed.category, parsed.description, date, time, parsed?.merchant || 'Unknown', 'Telegram')
+                .run();
+        } catch (error) {
+            await sendMessageToTelegram(env, String(chatId), '⚠️ Sorry, I could not save the expense. Please try again.');
+            throw throwError("D1 database record insertion failed", 200);
+        }
+
+        const excapedCat = escapeMarkdownV2(parsed.category);
+        const excapedMerchant = escapeMarkdownV2(parsed?.merchant || 'Unknown');
+        const excapedDescription = escapeMarkdownV2(parsed.description || '');
+
+        const confirmation = `✅ Logged * ${parsed.amount}* (${excapedCat}) for _${excapedDescription}_ at _${excapedMerchant} _.`;
+
+        await sendMessageToTelegram(env, String(chatId), confirmation, true);
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
     } catch (error) {
-        console.error('AI Parse Error:', error);
-        await sendMessageToTelegram(env, String(chatId), '⚠️ Sorry, I could not parse the expense. Please try again.');
-        return new Response(JSON.stringify({ ok: false, reason: 'ai_error' }), { status: 200 });
+        //TODO: add a logging service which could log issues
+        if (error instanceof HttpError) {
+            return new Response(JSON.stringify({ ok: false, error }), { status: error.status });
+        }
+
+        return new Response(JSON.stringify({ ok: false, error }), { status: 500 });
     }
-
-    // validating the parsed ai data
-    if (!isValidExpenseObject(parsed)) {
-        console.error('Invalid Expense Object:', parsed);
-        await sendMessageToTelegram(env, String(chatId), '⚠️ Sorry, I could not parse the expense. Please try again.');
-        return new Response(JSON.stringify({ ok: false, reason: 'invalid_data' }), { status: 200 });
-    }
-
-    // Default date/time if null
-    const date = parsed.date || moment().format('ll');
-    const time = parsed.time || moment().format('LT');
-
-    if (parsed.category) {
-        parsed.category = parsed.category.toLowerCase().trim();
-    }
-
-    // inserting into DB
-    const INSERT_QUERY = `INSERT INTO Expenses(user_id, amount, category, description, date, time, merchant, platform) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`;
-
-    try {
-        await env.budget_db.prepare(INSERT_QUERY)
-            .bind(String(chatId), parsed.amount, parsed.category, parsed.description, date, time, parsed?.merchant || 'Unknown', 'Telegram')
-            .run();
-    } catch (error) {
-        console.error('DB Insert Error:', error);
-        await sendMessageToTelegram(env, String(chatId), '⚠️ Sorry, I could not save the expense. Please try again.');
-        return new Response(JSON.stringify({ ok: false, reason: 'db_error' }), { status: 200 });
-    }
-
-    const excapedCat = escapeMarkdownV2(parsed.category);
-    const excapedMerchant = escapeMarkdownV2(parsed?.merchant || 'Unknown');
-    const excapedDescription = escapeMarkdownV2(parsed.description || '');
-
-    const confirmation = `✅ Logged * ${parsed.amount}* (${excapedCat}) for _${excapedDescription}_ at _${excapedMerchant} _.`;
-
-    await sendMessageToTelegram(env, String(chatId), confirmation, true);
-
-    return new Response(JSON.stringify({ ok: true }), { status: 200 });
 }
