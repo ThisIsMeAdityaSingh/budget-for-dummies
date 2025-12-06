@@ -4,36 +4,37 @@ import { detectSignals, escapeMarkdownV2, getExpenseGenerationPrompt, getSentime
 import { sendMessageToTelegram } from "./send-message";
 import { analyseSentimentSchema } from "../utils/confidence-utility";
 import { HttpError, throwError } from "../utils/error";
+import { ServiceError, ServiceErrorTypes } from "../error";
 
 export async function pushExpense(request: Request, env: Env): Promise<Response> {
     try {
         if (request.method !== "POST") {
-            throw throwError("Method Not Allowed", 405);
+            throw new ServiceError("Method not allowed", ServiceErrorTypes.WRONG_METHOD_ERROR, 405);
         }
 
         const body = await request.json() as TelegramUpdate;
 
         const chatId = body?.message?.chat?.id;
-        if (!chatId) throw throwError("Doesn't seem to be from the right source", 400);
+        if (!chatId) throw new ServiceError("Request error: wrong source", ServiceErrorTypes.REQUEST_ERROR, 400);
 
         const unSanitizedtext = body?.message?.text;
-        if (!unSanitizedtext) throw throwError("Nothing to do with the request", 400);
+        if (!unSanitizedtext) throw new ServiceError("Request error: no action needed", ServiceErrorTypes.REQUEST_ERROR, 400);
 
         const { isValid, telegramMessage, error, sanitizedText } = sanitizeText(unSanitizedtext);
         if (!isValid) {
             telegramMessage && await sendMessageToTelegram(env, String(chatId), telegramMessage);
-            throw throwError(error, 200);
+            throw new ServiceError(error, ServiceErrorTypes.REQUEST_ERROR, 200);
         }
 
         const text = sanitizedText;
 
 
         const messageFromId = body?.message?.from?.id;
-        if (!messageFromId) throw throwError("Invalid or fake message", 400);
+        if (!messageFromId) throw new ServiceError("Request error: unknown person", ServiceErrorTypes.TELEGRAM_ERROR, 200);
 
         if (messageFromId !== parseInt(env.TELEGRAM_VALID_FROM_ID, 10)) {
             await sendMessageToTelegram(env, String(chatId), 'You are supposed to be here ⁉️');
-            throw throwError("Unauthorized", 200); // returning 200 OK coz telegram will keep on re-trying
+            throw new ServiceError("Request error: unauthorized", ServiceErrorTypes.TELEGRAM_ERROR, 200);
         }
 
         // now to save me money, the text would go through singal detection
@@ -49,13 +50,13 @@ export async function pushExpense(request: Request, env: Env): Promise<Response>
 
         if (noExpense) {
             await sendMessageToTelegram(env, String(chatId), '⁉️ No expense detected. Try: `Lunch 150 at Dominos`');
-            throw throwError("No expense signal detexted", 200);
+            throw new ServiceError("Signal error: signal detection", ServiceErrorTypes.SIGNAL_ERROR, 200);
         }
 
         // if amount is not detected, we can't process it
         if (!signals.hasNumber && !signals.hasCurrency) {
             await sendMessageToTelegram(env, String(chatId), '⁉️ No amount detected. Try: `Lunch 150 at Dominos`');
-            throw throwError("No amount detected", 200);
+            throw new ServiceError("Signal error: amount detection", ServiceErrorTypes.SIGNAL_ERROR, 200);
         }
 
         // now that signal detection would block majority of the bad traffic (I hope),
@@ -82,12 +83,12 @@ export async function pushExpense(request: Request, env: Env): Promise<Response>
             score = response?.candidates?.[0]?.content?.parts?.[0]?.text;
         } catch (err) {
             await sendMessageToTelegram(env, String(chatId), "⁉️ Sorry, can't figure out what that was. Try: `Lunch 150 at Dominos`");
-            throw throwError("Sentiment doesn't match", 200);
+            throw new ServiceError("Sentiment error: no strong sentiment", ServiceErrorTypes.AI_ERROR, 200);
         }
 
         if (!score) {
             await sendMessageToTelegram(env, String(chatId), "⁉️ Sorry, can't figure out what that was. Try: `Lunch 150 at Dominos`");
-            throw throwError("Sentiment doesn't match", 200);
+            throw new ServiceError("Sentiment error: no strong sentiment", ServiceErrorTypes.AI_ERROR, 200);
         }
 
         try {
@@ -99,7 +100,7 @@ export async function pushExpense(request: Request, env: Env): Promise<Response>
             }
         } catch (error) {
             await sendMessageToTelegram(env, String(chatId), "⁉️ Sorry, can't figure out what that was. Try: `Lunch 150 at Dominos`");
-            throw throwError(`Sentiment is not parsable ${score}`, 200);
+            throw new ServiceError("Sentiment error: not parsable", ServiceErrorTypes.AI_ERROR, 200);
         }
 
         const todayDate = moment().format('ll');
@@ -145,19 +146,22 @@ export async function pushExpense(request: Request, env: Env): Promise<Response>
             });
 
             if (!aiResponse.response) {
-                throw new Error('AI response is empty');
+                throw new ServiceError("AI error: no response", ServiceErrorTypes.AI_ERROR, 200);
             }
 
             parsed = JSON.parse(aiResponse.response);
         } catch (error) {
             await sendMessageToTelegram(env, String(chatId), '⚠️ Sorry, I could not parse the expense. Please try again.');
+            if (error instanceof ServiceError) {
+                throw new ServiceError(error.message, error.type, error.statusCode);
+            }
             throw throwError("Text generation model failed in extracting expense", 200);
         }
 
         // validating the parsed ai data
         if (!isValidExpenseObject(parsed)) {
             await sendMessageToTelegram(env, String(chatId), '⚠️ Sorry, I could not parse the expense. Please try again.');
-            throw throwError("Invalid expense generated by model", 200);
+            throw new ServiceError("AI error: invalid expense generate", ServiceErrorTypes.AI_ERROR, 200);
         }
 
         // Default date/time if null
@@ -176,7 +180,7 @@ export async function pushExpense(request: Request, env: Env): Promise<Response>
                 .run();
         } catch (error) {
             await sendMessageToTelegram(env, String(chatId), '⚠️ Sorry, I could not save the expense. Please try again.');
-            throw throwError("D1 database record insertion failed", 200);
+            throw new ServiceError("DB error: unable to insert records", ServiceErrorTypes.DATABASE_ERROR, 200);
         }
 
         const excapedCat = escapeMarkdownV2(parsed.category);
@@ -189,6 +193,10 @@ export async function pushExpense(request: Request, env: Env): Promise<Response>
         return new Response(JSON.stringify({ ok: true }), { status: 200 });
     } catch (error) {
         //TODO: add a logging service which could log issues
+        if (error instanceof ServiceError) {
+            return new Response(JSON.stringify({ ok: false, message: error.message }), { status: error.statusCode });
+        }
+
         if (error instanceof HttpError) {
             return new Response(JSON.stringify({ ok: false, error }), { status: error.status });
         }

@@ -62,15 +62,12 @@ export function isValidExpenseObject(expense: any): expense is Expense {
     }
 
     // amount should be +ve and within limit
-    console.log('Expense amount', expense.amount, typeof expense.amount);
     if (typeof expense.amount !== 'number' || expense.amount <= 0 || !isFinite(expense.amount) || expense.amount > 999999) return false;
 
     // category should be a string
-    console.log('Expense category', expense.category, typeof expense.category);
     if (typeof expense.category !== 'string') return false;
 
     // description should be a string
-    console.log('Expense description', expense.description, typeof expense.description);
     if (typeof expense.description !== 'string') return false;
 
     return true;
