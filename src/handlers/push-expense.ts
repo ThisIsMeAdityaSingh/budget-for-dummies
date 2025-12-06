@@ -168,7 +168,7 @@ export async function pushExpense(request: Request, env: Env): Promise<Response>
             parsed.category = parsed.category.toLowerCase().trim();
         }
 
-        const INSERT_QUERY = `INSERT INTO Expenses(user_id, amount, category, description, date, time, merchant, platform) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`;
+        const INSERT_QUERY = `INSERT INTO expenses(user_id, amount, category, description, date, time, merchant, platform) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`;
 
         try {
             await env.budget_db.prepare(INSERT_QUERY)
