@@ -266,11 +266,12 @@ export function sanitizeText(text: string) {
         return issues;
     }
 
-    // check has to contain both alpha and numeric & should not contain any special characters
-    if (!/[a-zA-Z]/.test(text) || !/[0-9]/.test(text) || /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>/?]/.test(text)) {
+    // check has to contain both alpha and numeric & should not contain dangerous special characters
+    // Allow common punctuation: . , ! ?
+    if (!/[a-zA-Z]/.test(text) || !/[0-9]/.test(text) || /[@#$%^&*()_+\-=\[\]{};':"\\|<>\/]/.test(text)) {
         issues.isValid = false;
-        issues.telegramMessage = "✖️ Text must contain both alpha and numeric characters and should not contain any special characters";
-        issues.error = "text must contain both alpha and numeric characters and should not contain any special characters";
+        issues.telegramMessage = "✖️ Text must contain both alpha and numeric characters and should not contain special characters (except . , ! ?)";
+        issues.error = "text must contain both alpha and numeric characters and should not contain special characters";
 
         return issues;
     }
