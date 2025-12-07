@@ -5,11 +5,26 @@ import { sendMessageToTelegram } from "./send-message";
 import { analyseSentimentSchema } from "../utils/confidence-utility";
 import { HttpError, throwError } from "../utils/error";
 import { ServiceError, ServiceErrorTypes } from "../error";
+import { performTimeSafeEquals } from "../utils/time-safe-match";
 
 export async function pushExpense(request: Request, env: Env): Promise<Response> {
     try {
         if (request.method !== "POST") {
             throw new ServiceError("Method not allowed", ServiceErrorTypes.WRONG_METHOD_ERROR, 405);
+        }
+
+        const requestSentTime = request.headers.get("x-custom-request-sent-time") as string;
+        if (!requestSentTime) throw new ServiceError("Request error: no request sent time", ServiceErrorTypes.REQUEST_ERROR, 400);
+
+        if (Date.now() - Number(requestSentTime) >= 5 * 60 * 1000) {
+            throw new ServiceError("Request error: request too old", ServiceErrorTypes.REQUEST_ERROR, 400);
+        }
+
+        const clientId = request.headers.get("x-custom-client-id") as string;
+        if (!clientId) throw new ServiceError("Request error: no client id", ServiceErrorTypes.REQUEST_ERROR, 400);
+
+        if (!performTimeSafeEquals(clientId, env.GATEWAY_SERVICE_CALL_TOKEN)) {
+            throw new ServiceError("Request error: unauthorized", ServiceErrorTypes.TELEGRAM_ERROR, 200);
         }
 
         const body = await request.json() as TelegramUpdate;
@@ -32,7 +47,7 @@ export async function pushExpense(request: Request, env: Env): Promise<Response>
         const messageFromId = body?.message?.from?.id;
         if (!messageFromId) throw new ServiceError("Request error: unknown person", ServiceErrorTypes.TELEGRAM_ERROR, 200);
 
-        if (messageFromId !== parseInt(env.TELEGRAM_VALID_FROM_ID, 10)) {
+        if (!performTimeSafeEquals(String(messageFromId), env.TELEGRAM_VALID_FROM_ID)) {
             await sendMessageToTelegram(env, String(chatId), 'You are supposed to be here ⁉️');
             throw new ServiceError("Request error: unauthorized", ServiceErrorTypes.TELEGRAM_ERROR, 200);
         }

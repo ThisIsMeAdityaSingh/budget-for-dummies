@@ -11,12 +11,14 @@
 	},
 	"devDependencies": {
 		"@cloudflare/vitest-pool-workers": "^0.8.19",
+		"@types/node": "^24.10.1",
 		"typescript": "^5.5.2",
 		"vitest": "~3.2.0",
 		"wrangler": "^4.51.0"
 	},
 	"dependencies": {
 		"@google/genai": "^1.30.0",
+		"crypto": "^1.0.1",
 		"moment": "^2.30.1"
 	}
 }

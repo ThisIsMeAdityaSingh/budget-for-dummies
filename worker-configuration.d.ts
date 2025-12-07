@@ -12,6 +12,7 @@ declare namespace Cloudflare {
         budget_db: D1Database;
         GOOGLE_GEMINI_API_KEY: string;
         SENTIMENT_CONFIDENT_THRESHOLD: string;
+        GATEWAY_SERVICE_CALL_TOKEN: string;
         AI: Ai;
     }
 }
