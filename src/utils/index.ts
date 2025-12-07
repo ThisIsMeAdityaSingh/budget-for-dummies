@@ -208,15 +208,21 @@ export function detectSignals(inputText: string): ExpenseSignal {
 
 export function getSentimentPrompt(text: string) {
     const sentimentPrompt = `
-    Analyze the text to determine if it represents a PERSONAL EXPENSE by the narrator (User).
+    Analyze the text to determine if it represents MY OWN EXPENSE (money I spent or paid).
 
     SCORING RULES:
-    - Score 0.95 - 1.0: User explicitly paid or spent money, implicitly or explicitly paid or spent money (e.g., "Spent 150 for dinner on Zomato.", "Paid 14000 on rent for this month.", "150 dinner swiggy."), or paid a debt.
-    - Score 0.0 - 0.1: 
-        1. General statements or facts ("Rent is expensive", "I have 100 trees", "School fees is 10000").
-        2. Third-party expenses ("Dad paid 500", "She bought 4 apples in 100 dollars").
-        3. INCOME statements ("Received salary 5000" -> This is NOT an expense).
-        4. Future plans ("I will buy this next year").
+    - Score 0.95 - 1.0: I spent or paid money for something. This includes:
+        • Explicit first-person: "I spent 150 for dinner", "I paid 14000 on rent"
+        • Implicit first-person: "Spent 150 for dinner", "Paid 14000 on rent", "150 dinner swiggy", "490 licious fish"
+        • Past tense expenses: "Bought groceries 500", "Ordered food 300"
+        • Debt payments: "Paid back 1000 to friend"
+    
+    - Score 0.0 - 0.1: NOT my expense. This includes:
+        1. Third-party expenses: "Dad paid 500", "She bought apples", "My friend spent 200", "He ordered food"
+        2. General statements: "Rent is expensive", "School fees is 10000", "I have 100 trees"
+        3. Income/receipts: "Received salary 5000", "Got paid 3000", "Earned 500"
+        4. Future plans: "I will buy this", "Planning to spend 500"
+        5. Questions: "Should I buy this?", "How much does it cost?"
 
     INPUT TEXT: "${text}"`;
 
