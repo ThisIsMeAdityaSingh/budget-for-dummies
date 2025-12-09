@@ -186,7 +186,7 @@ export async function pushExpense(request: Request, env: Env): Promise<Response>
         if (parsed.category) {
             parsed.category = parsed.category.toLowerCase().trim();
         } else {
-            parsed.category = 'general';
+            parsed.category = 'misc';
         }
 
         if (!parsed.description) {
