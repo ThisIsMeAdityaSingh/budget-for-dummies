@@ -211,17 +211,20 @@ export function getSentimentPrompt(text: string) {
     Analyze the text to determine if it represents MY OWN EXPENSE (money I spent or paid).
 
     SCORING RULES:
-    - Score 0.95 - 1.0: I spent or paid money for something. This includes:
+    - Score 0.95 - 1.0: I spent or paid money for something (or planning to strictly for rent/fixed bills). This includes:
         • Explicit first-person: "I spent 150 for dinner", "I paid 14000 on rent"
         • Implicit first-person: "Spent 150 for dinner", "Paid 14000 on rent", "150 dinner swiggy", "490 licious fish"
         • Past tense expenses: "Bought groceries 500", "Ordered food 300"
         • Debt payments: "Paid back 1000 to friend"
+        • Detailed item lists: "Spent 297 on Flipkart buying yogurt, dark chocolates, oats"
+        • Investment/SIP: "Spent 1000 on Bharat 22 FOF for SIP", "Invested 5000 in mutual fund"
+        • Rent/Bills with future dates: "Paid rent of 18000 for December 2025" (valid if action is paid)
     
     - Score 0.0 - 0.1: NOT my expense. This includes:
         1. Third-party expenses: "Dad paid 500", "She bought apples", "My friend spent 200", "He ordered food"
         2. General statements: "Rent is expensive", "School fees is 10000", "I have 100 trees"
         3. Income/receipts: "Received salary 5000", "Got paid 3000", "Earned 500"
-        4. Future plans: "I will buy this", "Planning to spend 500"
+        4. Purely future plans without 'paid' verb: "I will buy this next month", "Planning to spend 500"
         5. Questions: "Should I buy this?", "How much does it cost?"
 
     INPUT TEXT: "${text}"`;
@@ -285,11 +288,11 @@ export function sanitizeText(text: string) {
         return issues;
     }
 
-    // text should not contain more than 15 words
-    if (text.split(" ").length > 18) {
+    // text should not contain more than 25 words
+    if (text.split(" ").length > 25) {
         issues.isValid = false;
-        issues.telegramMessage = "🤖 Text should not contain more than 18 words. Not expecting a trauma dump here.";
-        issues.error = "text should not contain more than 18 words";
+        issues.telegramMessage = "🤖 Text should not contain more than 25 words. Not expecting a trauma dump here.";
+        issues.error = "text should not contain more than 25 words";
 
         return issues;
     }

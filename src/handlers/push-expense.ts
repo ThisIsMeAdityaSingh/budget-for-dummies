@@ -185,6 +185,12 @@ export async function pushExpense(request: Request, env: Env): Promise<Response>
 
         if (parsed.category) {
             parsed.category = parsed.category.toLowerCase().trim();
+        } else {
+            parsed.category = 'general';
+        }
+
+        if (!parsed.description) {
+            parsed.description = 'expense';
         }
 
         const INSERT_QUERY = `INSERT INTO expenses(user_id, amount, category, description, date, time, merchant, platform) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`;
