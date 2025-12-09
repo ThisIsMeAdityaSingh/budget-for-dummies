@@ -191,7 +191,7 @@ export async function pushExpense(request: Request, env: Env): Promise<Response>
 
         try {
             await env.budget_db.prepare(INSERT_QUERY)
-                .bind(String(chatId), parsed.amount, parsed.category, parsed.description, date, time, parsed?.merchant || 'Unknown', 'Telegram')
+                .bind(String(chatId), parsed.amount, parsed.category, parsed.description, date, time, parsed?.merchant?.toLowerCase() || 'Unknown', 'Telegram')
                 .run();
         } catch (error) {
             await sendMessageToTelegram(env, String(chatId), '⚠️ Sorry, I could not save the expense. Please try again.');
