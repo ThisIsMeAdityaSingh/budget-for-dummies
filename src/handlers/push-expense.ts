@@ -133,6 +133,12 @@ export async function pushExpense(request: Request, env: Env): Promise<Response>
             { role: "assistant", content: `{ "amount": 349, "category": "food", "description": "dinner", "date": "${moment().subtract(1, 'day').format('ll')}", "time": "${todayTime}", "merchant": "zomato" } ` },
             { role: "user", content: "Lunch 120" },
             { role: "assistant", content: `{ "amount": 120, "category": "food", "description": "lunch", "date": "${todayDate}", "time": "${todayTime}", "merchant": null } ` },
+            { role: "user", content: "Spent 100 for office lunch" },
+            { role: "assistant", content: `{ "amount": 100, "category": "food", "description": "office lunch", "date": "${todayDate}", "time": "${todayTime}", "merchant": office } ` },
+            { role: "user", content: "Spent 200 buying dinner at office" },
+            { role: "assistant", content: `{ "amount": 200, "category": "food", "description": "dinner", "date": "${todayDate}", "time": "${todayTime}", "merchant": "office" } ` },
+            { role: "user", content: "Spent 200 buying dinner at office yesterday" },
+            { role: "assistant", content: `{ "amount": 200, "category": "food", "description": "dinner", "date": "${moment().subtract(1, 'day').format('ll')}", "time": "${todayTime}", "merchant": "office" } ` },
             { role: "user", content: text }
         ];
 
