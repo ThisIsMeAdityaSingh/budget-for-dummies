@@ -110,7 +110,7 @@ export async function pushExpense(request: Request, env: Env): Promise<Response>
             const sentimentScore = JSON.parse(score);
             const sentimentScoreValue = sentimentScore?.score;
 
-            if (sentimentScoreValue < Number(env.SENTIMENT_CONFIDENT_THRESHOLD || "0.95")) {
+            if (sentimentScoreValue < Number(env.SENTIMENT_CONFIDENT_THRESHOLD || "0.90")) {
                 throw throwError(`Sentiment for text low, doesn't seem to be an expense ${text} || ${score}`, 200);
             }
         } catch (error) {

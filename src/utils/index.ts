@@ -211,21 +211,18 @@ export function getSentimentPrompt(text: string) {
     Analyze the text to determine if it represents MY OWN EXPENSE (money I spent or paid).
 
     SCORING RULES:
-    - Score 0.95 - 1.0: I spent or paid money for something (or planning to strictly for rent/fixed bills). This includes:
-        • Explicit first-person: "I spent 150 for dinner", "I paid 14000 on rent"
-        • Implicit first-person: "Spent 150 for dinner", "Paid 14000 on rent", "150 dinner swiggy", "490 licious fish"
-        • Past tense expenses: "Bought groceries 500", "Ordered food 300"
-        • Debt payments: "Paid back 1000 to friend"
-        • Detailed item lists: "Spent 297 on Flipkart buying yogurt, dark chocolates, oats"
-        • Investment/SIP: "Spent 1000 on Bharat 22 FOF for SIP", "Invested 5000 in mutual fund"
-        • Rent/Bills with future dates: "Paid rent of 18000 for December 2025" (valid if action is paid)
-    
-    - Score 0.0 - 0.1: NOT my expense. This includes:
-        1. Third-party expenses: "Dad paid 500", "She bought apples", "My friend spent 200", "He ordered food"
-        2. General statements: "Rent is expensive", "School fees is 10000", "I have 100 trees"
-        3. Income/receipts: "Received salary 5000", "Got paid 3000", "Earned 500"
-        4. Purely future plans without 'paid' verb: "I will buy this next month", "Planning to spend 500"
-        5. Questions: "Should I buy this?", "How much does it cost?"
+    - Score 1.0: PERSONAL EXPENSES.
+      Principles:
+      1. Action: Spending, paying, buying, ordering, investing, giving.
+      2. Subject: First person ("I") or Implied First Person (e.g., "Spent 500", "Lunch 150").
+      3. Tense: Past tense ("paid", "spent") or immediate present ("paying").
+
+    - Score 0.0: NOT AN EXPENSE.
+      Principles:
+      1. Third-party actions ("He spent", "Dad paid").
+      2. Income/Receipts ("Received salary", "Got paid").
+      3. General statements/Facts ("Rent is high", "I have 5 apples").
+      4. Future plans/Questions ("Will buy", "Should I?").
 
     INPUT TEXT: "${text}"`;
 
