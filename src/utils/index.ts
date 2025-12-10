@@ -207,26 +207,23 @@ export function detectSignals(inputText: string): ExpenseSignal {
 }
 
 export function getSentimentPrompt(text: string) {
-    const sentimentPrompt = `
-    Analyze the text to determine if it represents MY OWN EXPENSE (money I spent or paid).
+    const prompt = `
+    Classify if this text is a PERSONAL EXPENSE (money YOU spent/paid). Assume it's your journal: implied first-person (e.g., "Spent X on Y") = YOU, unless third-party specified. Output ONLY JSON.
 
-    SCORING RULES:
-    - Score 1.0: PERSONAL EXPENSES.
-      Principles:
-      1. Action: Spending, paying, buying, ordering, investing, giving.
-      2. Subject: First person ("I") or Implied First Person (e.g., "Spent 500", "Lunch 150").
-      3. Tense: Past tense ("paid", "spent") or immediate present ("paying").
+    SCORING (lean 1.0 for implied personal spends):
+    - 1.0: Your spend/pay/buy/order/invest (past/present/habitual tense; amount optional if action clear).
+    Examples: "Spent 121 buying milk and protein bar from flipkart." (implied you, past action). "Bought keyboard 500." (shorthand personal). "Paid 14000 as rent this month" (implied you, past action). "Spent 100 for lunch on zomato" (implied you, past action).
 
-    - Score 0.0: NOT AN EXPENSE.
-      Principles:
-      1. Third-party actions ("He spent", "Dad paid").
-      2. Income/Receipts ("Received salary", "Got paid").
-      3. General statements/Facts ("Rent is high", "I have 5 apples").
-      4. Future plans/Questions ("Will buy", "Should I?").
+    - 0.0: Third-party ("Friend spent"), income ("Got paid"), facts ("Prices high"), future/questions ("Might buy"), non-money ("Spent time").
+    Examples: "Dad paid 500." (other subject). "Salary received 50000." (income). "I have 100 plants" (fact). "I am 100 kms away from home" (future). "I should buy a new phone" (question). "I want to buy a new phone" (question).
 
-    INPUT TEXT: "${text}"`;
+    - 0.5: Rare ambiguity (e.g., "We spent 100" w/o your share).
 
-    return sentimentPrompt;
+    INPUT: "${text}"
+
+    OUTPUT: {"score": X.X, "explanation": "[1 sentence]"}`;
+
+    return prompt;
 }
 
 export function getExpenseGenerationPrompt(todayDate: string, todayTime: string, categoriesList: string) {
