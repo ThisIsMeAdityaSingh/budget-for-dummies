@@ -1,87 +1,148 @@
-# 💰 Budget For Dummies
+# 💰 Budget For Dummies (Technical Deep Dive)
 
-> "Because spending money is easy, but remembering where it went is hard."
+> "A serverless, dual-AI pipeline for high-precision expense tracking on the edge."
 
-A robust, AI-powered expense tracking bot built on **Cloudflare Workers**. It intercepts natural language messages from Telegram, validates them using multi-stage AI pipelines, and securely stores structured expense data in a **Cloudflare D1** database.
-
----
-
-## ✨ Features
-
-### 🛡️ Security & Validation
-- **Time-Safe Authentication**: Protects the webhook endpoint using `crypto.timingSafeEqual` with a shared secret token.
-- **Request Validation**: Enforces strict timestamp checks (replay attack prevention) and verifies Telegram user identity.
-- **Sanitization**: Inputs are heavily sanitized to prevent injection attacks and ensure data integrity.
-
-### 🧠 Intelligent Processing
-- **Signal Detection**: Heuristic algorithms instantly filter out non-expense messages (e.g., "Hi", "Good morning") to save AI costs.
-- **Sentiment Analysis v2.5**: Powered by **Google Gemini 2.5 Flash Lite**. It uses a principle-based prompt to strictly classify personal expenses, filtering out third-party spending, income, or general facts.
-- **LLM Extraction**: Uses **Meta Llama 3.2 1B Instruct** (via Cloudflare Workers AI) to extract structured data:
-  - `amount` (Number)
-  - `category` (String - normalized)
-  - `description` (String - inferred)
-  - `merchant` (String - branding detection)
-  - `date` & `time` (ISO formats)
-
-### 💾 Persistence & Feedback
-- **D1 Database**: Serverless SQL storage for high-performance and low latency.
-- **Instant Feedback**: Sends formatted confirmations back to Telegram using Markdown V2.
-- **Error Handling**: Graceful error messages guide the user (e.g., "Try: Lunch 150 at Dominos").
+**Budget For Dummies** is a high-performance Telegram bot built on **Cloudflare Workers** that ingests natural language messages, rigorously sanitizes and validates them, and employs a multi-stage AI pipeline to extract structured expense data. It leverages **Google Gemini 2.5 Flash Lite** for semantic classification and **Meta Llama 3.2 1B** (running on Cloudflare Workers AI) for entity extraction, ensuring strict separation of personal specific expenses from general chatter.
 
 ---
 
-## 🏗️ Architecture Flow
+## 🏗 System Architecture
 
-1. **Telegram Webhook**: User sends "Spent 121 buying milk from flipkart".
-2. **Gateway**: Worker receives POST request, validates headers & token.
-3. **Signal Detector**: Checks for money/currency patterns and expense verbs.
-4. **Sentiment Analysis**: Gemini assesses if it's a *personal* expense (Score > 0.85).
-5. **Extraction**: Llama 3.2 extracts `{ amount: 121, merchant: "flipkart", ... }`.
-6. **Database**: SQL `INSERT` into `expenses` table.
-7. **Response**: User gets "✅ Logged 121 (groceries) for milk...".
+The system operates as a stateless event-driven architecture triggered by Telegram webhooks.
 
----
-
-## 📦 Prerequisites
-
-- **Node.js**: v18.x or later
-- **Cloudflare Account**: With Workers and D1 active
-- **Telegram Bot**: Created via BotFather
-- **Google AI Studio Key**: For Gemini models
-- **Wrangler CLI**: `npm install -g wrangler`
-
----
-
-## 🛠️ Configuration
-
-Create a `.dev.vars` file for local development (do not commit this):
-
-```ini
-# Security
-GATEWAY_SERVICE_CALL_TOKEN=your-super-secret-token
-
-# AI Services
-GOOGLE_GEMINI_API_KEY=your-gemini-api-key
-SENTIMENT_CONFIDENT_THRESHOLD=0.85
-
-# Telegram
-TELEGRAM_VALID_FROM_ID=123456789 (Your numeric User ID)
-
-# Application
-EXPENSE_CATEGORIES=food,transport,shopping,bills,entertainment,misc
+```mermaid
+graph TD
+    User[User (Telegram)] -->|POST Payload| Gateway[Cloudflare Worker]
+    Gateway -->|Auth & Validation| Sanitizer[Sanitization Layer]
+    Sanitizer -->|Heuristic Regex| Signal[Signal Detector]
+    Signal -->|Prompt Engineering| Gemini[Gemini 2.5 Flash Lite\n(Sentiment/Classification)]
+    Gemini -->|JSON Schema| Llama[Llama 3.2 1B Instruct\n(Entity Extraction)]
+    Llama -->|SQL| D1[(Cloudflare D1 Database)]
+    D1 -->|Confirmation| User
 ```
 
-### Wrangler Configuration (`wrangler.jsonc`)
+---
 
-Ensure your D1 database is bound:
+## 🔧 Technical Stack
+
+- **Runtime**: [Cloudflare Workers](https://workers.cloudflare.com/) (V8 Isolate)
+- **Language**: TypeScript throughout
+- **Database**: [Cloudflare D1](https://developers.cloudflare.com/d1/) (Serverless SQLite)
+- **AI Model 1 (Classification)**: `gemini-2.5-flash-lite` (via `@google/genai` SDK)
+- **AI Model 2 (Extraction)**: `@cf/meta/llama-3.2-1b-instruct` (via Workers AI Binding)
+- **Time/Date**: `moment.js` for locale-aware parsing
+- **Package Manager**: NPM / Wrangler
+
+---
+
+## ⚙️ Processing Pipeline
+
+### 1. Security & Validation Layer
+Incoming webhooks undergo strict verification before processing:
+- **Method Check**: Only `POST` allowed.
+- **Replay Attack Prevention**: Rejects requests older than 5 minutes via `x-custom-request-sent-time`.
+- **Identity Verification**:
+  - `x-custom-client-id` vs `GATEWAY_SERVICE_CALL_TOKEN` (Shared Secret).
+  - `message.from.id` vs `TELEGRAM_VALID_FROM_ID` (User Whitelist).
+- **Constant-Time Comparison**: Uses `crypto.timingSafeEqual` (via wrapper) to prevent timing attacks on token validation.
+
+### 2. Input Sanitization
+Raw text is normalized to prevent injection and reduce noise:
+- **Length Constraints**: 10 - 300 characters.
+- **Word Limit**: Max 25 words (prevents "trauma dumps" or irrelevant stories).
+- **Character Set**: Must contain mixed alphanumeric chars.
+- **Blacklist**: HTML tags and dangerous special characters are rejected.
+
+### 3. Heuristic Signal Detection (Pre-filter)
+To save AI inference costs, a Regex-based engine filters out obvious non-expenses. It scans for:
+- **Currency Symbols/Codes**: `₹`, `$`, `INR`, `USD`, `Rs.`
+- **Amounts**: Numeric values with optional decimal precision.
+- **Expense Verbs**: `spent`, `paid`, `bought`, `ordered`, etc.
+- **Temporal Markers**: ISO dates or natural language time formats.
+- **Merchants**: Capitalized patterns after prepositions (`at`, `from`, `via`).
+
+**Exit Condition**: If specific combinations (e.g., No Number AND No Currency) are missing, the pipeline aborts early with a guidance message.
+
+### 4. Semantic Classification (Gemini 2.5)
+Confirmed signals are sent to **Gemini 2.5 Flash Lite** with a temperature of `0.0`.
+- **Goal**: Determinate if the expense is **PERSONAL** vs. Third-Party/Income/General Fact.
+- **Prompt**: Uses "Journal Assumption" logic (implied first-person).
+- **Threshold**: Scores below `SENTIMENT_CONFIDENT_THRESHOLD` (default 0.90) are rejected.
+
+### 5. Entity Extraction (Llama 3.2)
+Valid personal expenses are processed by **Llama 3.2 1B Instruct** using Few-Shot Learning.
+- **Output**: JSON Object.
+- **Schema**:
+  ```typescript
+  {
+    amount: number;       // Extracted amount
+    category: string;     // Normalized (e.g., 'food', 'transport')
+    description: string;  // Inferred context
+    date: string;         // YYYY-MM-DD (Defaults to Today)
+    time: string;         // HH:MM (Defaults to Now)
+    merchant: string;     // Extracted vendor name
+  }
+  ```
+- **Context injection**: The system prompt is dynamically injected with the current Date (`moment().format('ll')`), Time, and allowed Categories.
+
+---
+
+## 🗄️ Database Schema (D1)
+
+Data is persisted in a strictly typed SQLite table `expenses`.
+
+```sql
+CREATE TABLE expenses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    amount REAL NOT NULL,
+    category TEXT,
+    description TEXT,
+    date TEXT,
+    time TEXT,
+    merchant TEXT,
+    platform TEXT DEFAULT 'Telegram',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+---
+
+## � Setup & Configuration
+
+### Prerequisites
+- Node.js v18+
+- Wrangler CLI (`npm i -g wrangler`)
+- A Cloudflare account with Workers and D1 enabled.
+- Google AI Studio API Key.
+
+### Environment Variables (`.dev.vars`)
+Create a `.dev.vars` file for local testing (never commit):
+
+```ini
+# Authentication
+GATEWAY_SERVICE_CALL_TOKEN="<your_secret_token>"
+TELEGRAM_VALID_FROM_ID="<your_telegram_user_id>"
+
+# AI Configuration
+GOOGLE_GEMINI_API_KEY="<your_gemini_key>"
+SENTIMENT_CONFIDENT_THRESHOLD="0.90"
+
+# Business Logic
+EXPENSE_CATEGORIES="food,travel,bills,shopping,entertainment,health,misc"
+```
+
+### Wrangler Config (`wrangler.jsonc`)
+Ensure your bindings match the code:
 
 ```jsonc
 {
+  "name": "budget-for-dummies",
   "d1_databases": [
     {
       "binding": "budget_db",
       "database_name": "budget-db",
-      "database_id": "your-d1-uuid"
+      "database_id": "<ID>"
     }
   ],
   "ai": {
@@ -90,39 +151,30 @@ Ensure your D1 database is bound:
 }
 ```
 
+### Database Migration
+Initialize the schema locally or in production:
+
+```bash
+# Local
+npx wrangler d1 execute budget-db --local --file=./src/db/schema.sql
+
+# Remote
+npx wrangler d1 execute budget-db --remote --file=./src/db/schema.sql
+```
+
 ---
 
-## 🚀 Setup & Deployment
+## 🧪 Development
 
-### 1. Installation
-
-```bash
-git clone https://github.com/your-username/budget-for-dummies.git
-cd budget-for-dummies
-npm install
-```
-
-### 2. Database Migration
-
-Initialize your D1 database schema:
-
-```bash
-npx wrangler d1 execute budget-db --local --file=./src/db/schema.sql
-```
-
-### 3. Local Development
-
-Run the worker locally. It will start a server at `http://localhost:8787`.
+### Run Locally
+Starts the worker on `localhost:8787`.
 
 ```bash
 npm run dev
 ```
 
-> **Note**: To test Telegram webhooks locally, use `ngrok` or `cloudflared` to tunnel requests to your localhost.
-
-### 4. Production Deployment
-
-Deploy to Cloudflare's global network:
+### Deployment
+Deploys to the Cloudflare network.
 
 ```bash
 npm run deploy
@@ -130,32 +182,5 @@ npm run deploy
 
 ---
 
-## 📚 API Reference
-
-### POST `/`
-
-The main webhook endpoint invoked by the gateway/Telegram.
-
-**Headers:**
-- `x-custom-client-id`: Must match `GATEWAY_SERVICE_CALL_TOKEN`
-- `x-custom-request-sent-time`: Unix timestamp (ms)
-
-**Body:**
-Standard Telegram Update JSON object.
-
----
-
-## 🧪 Testing and Verification
-
-We emphasize robustness. Key logic is unit-tested in `tests/` (coming soon).
-
-To manually verify the signal detection logic:
-```bash
-npx ts-node repro_signals.ts
-```
-
----
-
-## 📄 License
-
+## � License
 MIT © 2024
