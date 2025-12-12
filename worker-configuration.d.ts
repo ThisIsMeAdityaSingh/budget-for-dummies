@@ -15,6 +15,7 @@ declare namespace Cloudflare {
         GATEWAY_SERVICE_CALL_TOKEN: string;
         LOGGING_ENDPOINT?: string;
         LOGGING_SERVICE_TOKEN?: string;
+        TELEGRAM_MENU_OPTIONS_COMMAND: string;
         AI: Ai;
     }
 }

@@ -1,26 +1,28 @@
-/**
- * Welcome to Cloudflare Workers! This is your first worker.
- *
- * - Run `npm run dev` in your terminal to start a development server
- * - Open a browser tab at http://localhost:8787/ to see your worker in action
- * - Run `npm run deploy` to publish your worker
- *
- * Bind resources to your worker in `wrangler.jsonc`. After adding bindings, a type definition for the
- * `Env` object can be regenerated with `npm run cf-typegen`.
- *
- * Learn more at https://developers.cloudflare.com/workers/
- */
-
+import { ServiceError } from "./error";
 import { pushExpense } from "./handlers/push-expense";
+import { sendLogs } from "./handlers/send-logs";
+import { verifyIncomingMessage } from "./utils/verify-incoming-message";
 
 export default {
 	async fetch(request, env, ctx): Promise<Response> {
-		const url = new URL(request.url);
+		try {
+			const url = new URL(request.url);
 
-		if (url.pathname === "/" && request.method === "POST") {
-			return pushExpense(request, env);
+			const body = await verifyIncomingMessage(request, env);
+
+			if (url.pathname === "/" && request.method === "POST") {
+				const textMessage = body?.message?.text;
+
+				return pushExpense(request, env);
+			}
+
+			return new Response("Not Found", { status: 404 });
+		} catch (error) {
+			if (error instanceof ServiceError) {
+				sendLogs(env, error.level, error.message, error.stack || {}, error.errorCategory);
+				return new Response(error.message, { status: error.statusCode });
+			}
+			return new Response("Internal Server Error", { status: 500 });
 		}
-
-		return new Response("Not Found", { status: 404 });
 	},
 } satisfies ExportedHandler<Env>;
