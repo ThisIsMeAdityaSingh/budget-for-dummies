@@ -12,14 +12,15 @@ The system operates as a stateless event-driven architecture triggered by Telegr
 
 ```mermaid
 graph TD
-    User[User (Telegram)] -->|POST Payload| Gateway[Cloudflare Worker]
-    Gateway -->|Auth & Validation| Sanitizer[Sanitization Layer]
-    Sanitizer -->|Heuristic Regex| Signal[Signal Detector]
-    Signal -->|Prompt Engineering| Gemini[Gemini 2.5 Flash Lite\n(Sentiment/Classification)]
-    Gemini -->|JSON Schema| Llama[Llama 3.2 1B Instruct\n(Entity Extraction)]
-    Llama -->|SQL| D1[(Cloudflare D1 Database)]
-    D1 -->|Confirmation| User
+    User["User (Telegram)"] -->|"POST Payload"| Gateway["Gateway Service<br/>(Rate-limiter / API Gateway / Logging)"]
+    Gateway -->|"Auth & Validation"| Sanitizer["Sanitization Layer"]
+    Sanitizer -->|"Heuristic Regex"| Signal["Signal Detector"]
+    Signal -->|"Text classification model"| Gemini["Gemini 2.5 Flash Lite<br/>(Sentiment / Classification)"]
+    Gemini -->|"Text generation model"| Llama["Llama 3.2 1B Instruct<br/>(Entity Extraction)"]
+    Llama -->|"SQL"| D1["Cloudflare D1 Database"]
+    D1 -->|"Confirmation"| User["User (Telegram)"]
 ```
+
 
 ---
 
