@@ -50,13 +50,11 @@ export function isEmptyObject(obj: any) {
  * @returns {boolean} true if the expense object is valid, false otherwise
  */
 export function isValidExpenseObject(expense: any): expense is Expense {
-    console.log('type of expense', typeof expense);
     if (!expense || typeof expense !== 'object') return false;
     const required = ['amount', 'category', 'description'];
 
     for (const key of required) {
         if (!(key in expense)) {
-            console.log(`${key} not found in expense object`);
             return false;
         };
     }
@@ -265,9 +263,9 @@ export function sanitizeText(text: string) {
 
     // check has to contain both alpha and numeric & should not contain dangerous special characters
     // Allow common punctuation: . , ! ?
-    if (!/[a-zA-Z]/.test(text) || !/[0-9]/.test(text) || /[@#$%^&*()_+\-=\[\]{};':"\\|<>\/]/.test(text)) {
+    if (!/[a-zA-Z]/.test(text) || !/[0-9]/.test(text) || /[@#$%^&*()_=\[\]{};"\\|<>\/]/.test(text)) {
         issues.isValid = false;
-        issues.telegramMessage = "✖️ Text must contain both alpha and numeric characters and should not contain special characters (except . , ! ?)";
+        issues.telegramMessage = "✖️ Text must contain both alpha and numeric characters and should not contain special characters (except . , ! ? - : +)";
         issues.error = "text must contain both alpha and numeric characters and should not contain special characters";
 
         return issues;

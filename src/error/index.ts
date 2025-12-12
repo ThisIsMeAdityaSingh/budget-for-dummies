@@ -1,3 +1,5 @@
+import { LogLevels } from "../handlers/send-logs";
+
 export enum ServiceErrorTypes {
     TELEGRAM_ERROR = 'TELEGRAM_ERROR',
     AI_ERROR = 'AI_ERROR',
@@ -10,7 +12,7 @@ export enum ServiceErrorTypes {
 }
 
 export class ServiceError extends Error {
-    constructor(message: string, public type: string, public statusCode: number) {
+    constructor(message: string, public type: string, public statusCode: number, public level: LogLevels, public errorCategory: ServiceErrorTypes) {
         super(message);
     }
 }

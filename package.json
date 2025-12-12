@@ -18,7 +18,6 @@
 	},
 	"dependencies": {
 		"@google/genai": "^1.30.0",
-		"crypto": "^1.0.1",
 		"moment": "^2.30.1"
 	}
 }

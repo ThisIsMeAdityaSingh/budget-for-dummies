@@ -13,6 +13,8 @@ declare namespace Cloudflare {
         GOOGLE_GEMINI_API_KEY: string;
         SENTIMENT_CONFIDENT_THRESHOLD: string;
         GATEWAY_SERVICE_CALL_TOKEN: string;
+        LOGGING_ENDPOINT?: string;
+        LOGGING_SERVICE_TOKEN?: string;
         AI: Ai;
     }
 }

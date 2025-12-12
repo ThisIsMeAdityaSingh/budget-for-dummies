@@ -15,6 +15,12 @@ import { pushExpense } from "./handlers/push-expense";
 
 export default {
 	async fetch(request, env, ctx): Promise<Response> {
-		return pushExpense(request, env);
+		const url = new URL(request.url);
+
+		if (url.pathname === "/" && request.method === "POST") {
+			return pushExpense(request, env);
+		}
+
+		return new Response("Not Found", { status: 404 });
 	},
 } satisfies ExportedHandler<Env>;
