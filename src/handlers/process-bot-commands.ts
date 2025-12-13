@@ -6,9 +6,7 @@ import { sendLogs } from "./send-logs";
 import { getExpenseSummary } from "../bot-commands/summary";
 import { saveBudget } from "../bot-commands/save-budget";
 
-export async function processBotCommands(request: Request, env: Env): Promise<Response> {
-    const body = await request.json() as TelegramUpdate;
-
+export async function processBotCommands(body: TelegramUpdate, env: Env): Promise<Response> {
     const chatId = body!.message!.chat!.id!;
     const userText = body!.message!.text!;
 
@@ -19,22 +17,22 @@ export async function processBotCommands(request: Request, env: Env): Promise<Re
         }
 
         if (command === "/summarybyday") {
-            const startDate = moment().startOf('day').format('YYYY-MM-DD HH:mm:ss');
-            const endDate = moment().endOf('day').format('YYYY-MM-DD HH:mm:ss');
+            const startDate = moment().startOf('day').format('ll');
+            const endDate = moment().endOf('day').format('ll');
 
             return await getExpenseSummary(env, startDate, endDate, chatId);
         }
 
         if (command === "/summarybyweek") {
-            const startDate = moment().startOf('week').format('YYYY-MM-DD HH:mm:ss');
-            const endDate = moment().endOf('week').format('YYYY-MM-DD HH:mm:ss');
+            const startDate = moment().startOf('week').format('ll');
+            const endDate = moment().endOf('week').format('ll');
 
             return await getExpenseSummary(env, startDate, endDate, chatId);
         }
 
         if (command === "/summarybymonth") {
-            const startDate = moment().startOf('month').format('YYYY-MM-DD HH:mm:ss');
-            const endDate = moment().endOf('month').format('YYYY-MM-DD HH:mm:ss');
+            const startDate = moment().startOf('month').format('ll');
+            const endDate = moment().endOf('month').format('ll');
 
             return await getExpenseSummary(env, startDate, endDate, chatId);
         }
@@ -51,12 +49,12 @@ export async function processBotCommands(request: Request, env: Env): Promise<Re
             return await saveBudget(env, "monthly", chatId, Number(text));
         }
 
-        return new Response("Invalid command", { status: 200 });
+        return new Response(JSON.stringify({ ok: false, error: "Invalid command" }), { status: 200 });
     } catch (error) {
         if (error instanceof ServiceError) {
             await sendLogs(env, error.level, error.message, error.stack || {}, error.errorCategory);
-            return new Response(error.message, { status: error.statusCode });
+            return new Response(JSON.stringify({ ok: false, error: error.message }), { status: error.statusCode });
         }
-        return new Response("Failed to process command", { status: 500 });
+        return new Response(JSON.stringify({ ok: false, error: "Failed to process command" }), { status: 500 });
     }
 }

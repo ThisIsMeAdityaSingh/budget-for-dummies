@@ -238,22 +238,16 @@ Rules:
 }
 
 export const getExpenseSummaryPrompt = () => {
-    const systemContent = `You are a meticulous financial analyst with expertise in expense tracking and budgeting. Your job is to analyze the shared expense data and produce a comprehensive, actionable report.
+    const prompt = `You are a helpful expense assistant. Convert the following JSON array of expenses into a friendly, human-readable summary. 
 
-Key guidelines:
-- Assume the expenses are provided as a list, table, or raw text (e.g., dates, categories like 'Food', 'Travel', amounts in INR, descriptions).
-- Structure your report with these sections: 
-  1. **Executive Summary**: High-level overview (total expenses, average per category/item, time period covered).
-  2. **Breakdown by Category**: Use a table for totals, percentages, and averages per category. Highlight top 3 spend areas.
-  3. **Trends and Insights**: Identify patterns (e.g., monthly increases), outliers (e.g., unusually high items > INR10000), and comparisons (e.g., vs. typical benchmarks like 30% of income on needs).
-  4. **Recommendations**: 3-5 practical suggestions to reduce costs, backed by data from the report.
-- Use markdown for tables and bullet points to enhance readability.
-- Base all claims on the provided data; if data is incomplete, note assumptions and suggest clarifications.
-- Keep the tone professional, concise, and objective—aim for 150-250 words.
+Structure it like this:
+- Start with a header: "Your Expenses for [date range, e.g., Dec 13, 2025]:" (infer from dates).
+- List each expense as a bullet: "At [time], you spent ₹[amount] on [category] ("[description]") from [merchant] via [platform]."
+- End with a total spend and a short, positive tip (e.g., based on categories).
+- Use Indian Rupees (₹) symbol. Keep it concise, engaging, and under 300 words.
+`;
 
-Respond only with the report; do not add chit-chat.`;
-
-    return systemContent;
+    return prompt;
 };
 
 export function sanitizeText(text: string) {

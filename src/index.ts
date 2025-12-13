@@ -14,19 +14,20 @@ export default {
 			if (url.pathname === "/" && request.method === "POST") {
 				const textMessage = body!.message!.text;
 				if (env.TELEGRAM_MENU_OPTIONS_COMMAND.split(',').includes(textMessage?.split(' ')[0]!)) {
-					return processBotCommands(request, env);
+					return processBotCommands(body!, env);
 				}
 
-				return pushExpense(request, env);
+				return pushExpense(body!, env);
 			}
 
-			return new Response("Not Found", { status: 404 });
+			return new Response(JSON.stringify({ ok: false, error: "Not Found" }), { status: 404 });
 		} catch (error) {
+			console.log(error);
 			if (error instanceof ServiceError) {
 				sendLogs(env, error.level, error.message, error.stack || {}, error.errorCategory);
 				return new Response(error.message, { status: error.statusCode });
 			}
-			return new Response("Internal Server Error", { status: 500 });
+			return new Response(JSON.stringify({ ok: false, error: "Internal Server Error" }), { status: 500 });
 		}
 	},
 } satisfies ExportedHandler<Env>;

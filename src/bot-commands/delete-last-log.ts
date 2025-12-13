@@ -18,12 +18,12 @@ export async function deleteLastLog(env: Env, chatId: number): Promise<Response>
         await env.budget_db.prepare(DELETE_LAST_LOG_COMMAND).run();
 
         await sendMessageToTelegram(env, String(chatId), "Last log deleted successfully");
-        return new Response("Last log deleted", { status: 200 });
+        return new Response(JSON.stringify({ ok: true, lastLog }), { status: 200 });
     } catch (error) {
         if (error instanceof ServiceError) {
             sendLogs(env, error.level, error.message, error.stack || {}, error.errorCategory);
-            return new Response(error.message, { status: error.statusCode });
+            return new Response(JSON.stringify({ ok: false, error: error.message }), { status: error.statusCode });
         }
-        return new Response("Internal Server Error", { status: 500 });
+        return new Response(JSON.stringify({ ok: false, error: "Internal Server Error" }), { status: 500 });
     }
 }

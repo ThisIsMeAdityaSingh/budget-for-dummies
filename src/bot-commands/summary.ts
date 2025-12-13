@@ -5,8 +5,18 @@ import { getExpenseSummaryPrompt } from "../utils";
 
 export async function getExpenseSummary(env: Env, startDate: string, endDate: string, chatId: number): Promise<Response> {
     try {
-        const GET_EXPENSE_SUMMARY_COMMAND = `select * from expenses where date between '${startDate}' and '${endDate}'`;
-        const expenseSummary = await env.budget_db.prepare(GET_EXPENSE_SUMMARY_COMMAND).all();
+        console.log(startDate, endDate);
+        const GET_EXPENSE_SUMMARY_COMMAND = `select * from expenses where date between ? and ?`;
+        const expenseSummary = await env.budget_db.prepare(GET_EXPENSE_SUMMARY_COMMAND)
+            .bind(startDate, endDate)
+            .all();
+
+        console.log(expenseSummary)
+
+        if (expenseSummary.error || expenseSummary.results.length === 0) {
+            await sendMessageToTelegram(env, String(chatId), "No expenses found for the given date range", true);
+            return new Response(JSON.stringify({ ok: true, message: "No expenses found for the given date range" }), { status: 200 });
+        }
 
         // AI layer
         const expenseSummaryPrompt = getExpenseSummaryPrompt();
@@ -21,15 +31,15 @@ export async function getExpenseSummary(env: Env, startDate: string, endDate: st
         });
 
         if (aiResponse.response) {
-            await sendMessageToTelegram(env, String(chatId), aiResponse.response);
+            await sendMessageToTelegram(env, String(chatId), aiResponse.response, true);
         }
 
-        return new Response(aiResponse.response || "", { status: 200 });
+        return new Response(JSON.stringify({ ok: true, message: aiResponse.response || "" }), { status: 200 });
     } catch (error) {
         if (error instanceof ServiceError) {
             sendLogs(env, error.level, error.message, error.stack || {}, error.errorCategory);
-            return new Response(error.message, { status: error.statusCode });
+            return new Response(JSON.stringify({ ok: false, error: error.message }), { status: error.statusCode });
         }
-        return new Response("Internal Server Error", { status: 500 });
+        return new Response(JSON.stringify({ ok: false, error: "Internal Server Error" }), { status: 500 });
     }
 }

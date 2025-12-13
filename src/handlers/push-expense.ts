@@ -7,10 +7,8 @@ import { HttpError, throwError } from "../utils/error";
 import { ServiceError, ServiceErrorTypes } from "../error";
 import { LogLevels, sendLogs } from "./send-logs";
 
-export async function pushExpense(request: Request, env: Env): Promise<Response> {
+export async function pushExpense(body: TelegramUpdate, env: Env): Promise<Response> {
     try {
-        const body = await request.json() as TelegramUpdate;
-
         const chatId = body!.message!.chat!.id!;
         const unSanitizedtext = body!.message!.text!;
 
