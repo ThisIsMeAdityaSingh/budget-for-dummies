@@ -1,4 +1,5 @@
 import { ServiceError } from "./error";
+import { processBotCommands } from "./handlers/process-bot-commands";
 import { pushExpense } from "./handlers/push-expense";
 import { sendLogs } from "./handlers/send-logs";
 import { verifyIncomingMessage } from "./utils/verify-incoming-message";
@@ -11,7 +12,10 @@ export default {
 			const body = await verifyIncomingMessage(request, env);
 
 			if (url.pathname === "/" && request.method === "POST") {
-				const textMessage = body?.message?.text;
+				const textMessage = body!.message!.text;
+				if (env.TELEGRAM_MENU_OPTIONS_COMMAND.split(',').includes(textMessage?.split(' ')[0]!)) {
+					return processBotCommands(request, env);
+				}
 
 				return pushExpense(request, env);
 			}
