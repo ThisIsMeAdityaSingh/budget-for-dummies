@@ -130,7 +130,7 @@ GOOGLE_GEMINI_API_KEY="<your_gemini_key>"
 SENTIMENT_CONFIDENT_THRESHOLD="0.90"
 
 # Business Logic
-EXPENSE_CATEGORIES="food,travel,bills,shopping,entertainment,health,misc"
+EXPENSE_CATEGORIES="<your-categories>"
 ```
 
 ### Wrangler Config (`wrangler.jsonc`)
@@ -141,14 +141,11 @@ Ensure your bindings match the code:
   "name": "budget-for-dummies",
   "d1_databases": [
     {
-      "binding": "budget_db",
-      "database_name": "budget-db",
+      "binding": "db",
+      "database_name": "db",
       "database_id": "<ID>"
     }
   ],
-  "ai": {
-    "binding": "AI"
-  }
 }
 ```
 
@@ -180,8 +177,3 @@ Deploys to the Cloudflare network.
 ```bash
 npm run deploy
 ```
-
----
-
-## � License
-MIT © 2024
